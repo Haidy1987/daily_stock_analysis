@@ -8,6 +8,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [文档] 技术图表 05c 最终验收：记录性能测量、不新增结果缓存决策、bundle 体积、回归矩阵、回滚方案；P4 完成（100%）。
+- [新功能] 技术图表 Web 开放日/周/月切换并与 URL 双向同步；首页、选股、持仓与历史趋势抽屉增加 canonical `stock` 跳转入口。
+- [新功能] 技术图表 API 支持 `period=weekly|monthly`：日线先聚合 OHLCV 再按 technical-v1 重算完整指标；旧 `/history` 仍仅 daily。
+- [改进] 技术图表响应式与 i18n：窄屏（≤1023px）默认 `ma,boll,volume,macd,support_resistance`，副图单选切换；主题变量驱动图表色；补齐中英文 tooltip/数据说明/免责声明与可访问性文本摘要。
+- [测试] 技术图表补充 compact 布局、副图单选、themeColors 与页面 a11y 回归测试（Node 20.19+ vitest）。
+- [测试] 技术图表 05b：周期切换/跨页入口/持仓 URL 隔离回归（Node 20.19+ vitest 120 例）。
+- [新功能] 技术图表补齐 MACD/RSI/KDJ/CCI/BIAS 副图，支持指标开关与 URL `indicators` 双向同步，共享 tooltip 与缩放。
+- [新功能] 技术图表接入 Apache ECharts：日线 K 线、MA/BOLL、支撑压力/近期高低点与成交量副图联动。
+- [新功能] Web 新增技术图表页面骨架：`/technical-chart` 一级导航、API client、股票搜索与 URL 状态，以及 loading/empty/partial/error 摘要态（尚未绘图）。
+- [新功能] 新增日线技术图表 API `GET /api/v1/stocks/{stock_code}/technical-chart`，返回完整指标序列、支撑压力 summary，以及 empty/partial/source_unavailable 状态语义。
+- [改进] 共享指标引擎补齐 BOLL/KDJ/CCI 与支撑压力摘要；告警 KDJ/CCI 复用同一序列公式；P1 计算层验收完成。
+- [改进] 新增共享技术指标时间序列引擎（MA/MACD/RSI/BIAS/量价），StockTrendAnalyzer 复用同一计算；图表口径不足窗口输出 null，报告 RSI 仍兼容 fillna(50)。
+- [文档] 冻结技术图表 technical-v1 计算与 API 契约：完整指标公式、空值/除零、预热窗口、错误语义及与 history/报告/告警的兼容边界。
+- [文档] 细化技术图表 Cursor 提词粒度，将 Web 与最终验收拆分为 04a～04d、05a～05c，并明确复用现有 KDJ/CCI、StockAutocomplete、ECharts 和按性能证据决定缓存。
+- [文档] 新增技术指标图表 Cursor 分阶段提词，覆盖口径冻结、完整指标引擎、技术图表 API、Web 页面导航、周/月线和最终验收。
+- [文档] 新增技术图表改造 HTML 进度表，记录 2026-07-14 改造起点、阶段任务、完整指标清单和验收规则。
+- [文档] 将 BOLL、KDJ、CCI、BIAS 从后续预留项提升为技术图表项目必达指标，并同步更新页面布局、API 字段、后端任务和验收标准。
+- [文档] 补充技术图表页面结构设计与后端能力评估，明确页面布局、调用状态、现有接口缺口和 P0/P1/P2 补全任务。
+- [文档] 新增技术图表页面导航入口规划，明确一级菜单、`/technical-chart` 路由、查询参数、权限边界和实施阶段。
+- [文档] 新增技术指标图表第一版需求文档，明确 K 线、均线、成交量、MACD、RSI、支撑压力、API、交互和验收范围。
+- [修复] Docker 部署认证开关优先读取进程环境变量，避免容器已注入 `ADMIN_AUTH_ENABLED=true` 但因未挂载 `.env` 文件仍被误判为关闭。
+- [文档] 多用户阶段 4：新增切换/备份/验收说明；补充 `AUTH_MODE`、备份恢复脚本与迁移校验脚本。
+- [新功能] 管理员用户管理与个人账户：新增 `/api/v1/admin/users` CRUD/重置密码/撤销会话，Web 增加账户页与管理员用户管理页（角色来自 `/auth/me`）。
+- [新功能] 多用户数据隔离：分析历史/任务队列、自选股、持仓、预警、Agent 会话与决策信号按 `user_id` 隔离；新增 `user_watchlist_items`；旧数据回填初始 admin。
+- [新功能] 多用户认证核心：新增 users / user_sessions / user_preferences / audit_logs，服务端 Session、GET /auth/me 与 logout-all，兼容迁移遗留 .admin_password_hash，系统配置写入限 admin。
+- [文档] 新增多用户数据归属清单与迁移设计（阶段 0），覆盖认证链路、28 表归属、伪 user_id 语义、备份回滚与阶段 1–4 前置条件。
+- [文档] 新增多用户系统 Cursor 分阶段提词文档，覆盖盘点、认证核心、数据隔离、管理员 Web、测试、部署和回滚。
+- [文档] 新增多用户系统改造规划，明确认证、角色权限、用户数据隔离、数据库迁移、部署和回滚边界。
 - [改进] GitHub Actions 每日分析工作流补齐 TickFlow 数据源环境变量映射，并收敛 README 数据源稳定性说明到完整指南。
 - [修复] WebUI 启动时显式 `--host` / `--port` 不再被 `.env` 中的 `WEBUI_HOST` / `WEBUI_PORT` 覆盖，未传 CLI 参数时统一使用解析后的运行时配置。
 - [改进] GitHub Actions: 每日分析工作流（`00-daily-analysis.yml`）新增钉钉通知环境变量映射，支持在云端定时任务中直接使用钉钉机器人。

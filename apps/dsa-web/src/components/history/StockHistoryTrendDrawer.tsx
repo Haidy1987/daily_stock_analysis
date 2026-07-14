@@ -1,7 +1,9 @@
 import type React from 'react';
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { AnalysisReport, HistoryItem, StockHistoryFilters, StockHistoryRange } from '../../types/analysis';
 import { getSentimentColor } from '../../types/analysis';
+import { buildTechnicalChartHref } from '../../api/technicalChart';
 import {
   buildDecisionActionLabelMap,
   getDecisionActionLabel,
@@ -186,6 +188,7 @@ export const StockHistoryTrendDrawer: React.FC<StockHistoryTrendDrawerProps> = (
   onSelectRecord,
   onRetry,
 }) => {
+  const navigate = useNavigate();
   const { t } = useUiLanguage();
   const currentRecordId = report.meta.id;
   const [selectedRecordId, setSelectedRecordId] = useState(currentRecordId);
@@ -216,9 +219,20 @@ export const StockHistoryTrendDrawer: React.FC<StockHistoryTrendDrawerProps> = (
               </p>
             </div>
           </div>
-          <Button variant="secondary" size="sm" onClick={onClose}>
-            {t('stockTrend.backToCurrentReport')}
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            {report.meta.stockCode ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => navigate(buildTechnicalChartHref({ stock: report.meta.stockCode! }))}
+              >
+                {t('technicalChart.openChart')}
+              </Button>
+            ) : null}
+            <Button variant="secondary" size="sm" onClick={onClose}>
+              {t('stockTrend.backToCurrentReport')}
+            </Button>
+          </div>
         </div>
       </Card>
 

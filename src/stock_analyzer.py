@@ -26,6 +26,15 @@ import numpy as np
 
 from src.config import get_config
 from src.schemas.decision_scale import signal_key_for_score
+from src.services.technical_indicators import (
+    MACD_FAST_PERIOD,
+    MACD_SIGNAL_PERIOD,
+    MACD_SLOW_PERIOD,
+    VOLUME_HEAVY_RATIO,
+    VOLUME_SHRINK_RATIO,
+    compute_report_indicator_frame,
+    wilder_rsi,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -183,14 +192,14 @@ class StockTrendAnalyzer:
     """
     
     # 交易参数配置（BIAS_THRESHOLD 从 Config 读取，见 _generate_signal）
-    VOLUME_SHRINK_RATIO = 0.7   # 缩量判断阈值（当日量/5日均量）
-    VOLUME_HEAVY_RATIO = 1.5    # 放量判断阈值
+    # 量比 / MACD 参数与共享引擎保持同一来源。
+    VOLUME_SHRINK_RATIO = VOLUME_SHRINK_RATIO
+    VOLUME_HEAVY_RATIO = VOLUME_HEAVY_RATIO
     MA_SUPPORT_TOLERANCE = 0.02  # MA 支撑判断容忍度（2%）
 
-    # MACD 参数（标准12/26/9）
-    MACD_FAST = 12              # 快线周期
-    MACD_SLOW = 26             # 慢线周期
-    MACD_SIGNAL = 9             # 信号线周期
+    MACD_FAST = MACD_FAST_PERIOD
+    MACD_SLOW = MACD_SLOW_PERIOD
+    MACD_SIGNAL = MACD_SIGNAL_PERIOD
 
     # RSI 参数
     RSI_SHORT = 6               # 短期RSI周期
@@ -223,13 +232,9 @@ class StockTrendAnalyzer:
         
         # 确保数据按日期排序
         df = df.sort_values('date').reset_index(drop=True)
-        
-        # 计算均线
-        df = self._calculate_mas(df)
 
-        # 计算 MACD 和 RSI
-        df = self._calculate_macd(df)
-        df = self._calculate_rsi(df)
+        # 共享引擎一次算出 MA/MACD/RSI，再补报告专用 MA60
+        df = self._calculate_mas(df)
 
         # 获取最新数据
         latest = df.iloc[-1]
@@ -263,80 +268,29 @@ class StockTrendAnalyzer:
         return result
     
     def _calculate_mas(self, df: pd.DataFrame) -> pd.DataFrame:
-        """计算均线"""
-        df = df.copy()
-        df['MA5'] = df['close'].rolling(window=5).mean()
-        df['MA10'] = df['close'].rolling(window=10).mean()
-        df['MA20'] = df['close'].rolling(window=20).mean()
-        if len(df) >= 60:
-            df['MA60'] = df['close'].rolling(window=60).mean()
+        """计算均线（共享 technical_indicators 引擎 + 报告 MA60 适配）。"""
+        out = compute_report_indicator_frame(df)
+        if len(out) >= 60:
+            out['MA60'] = out['close'].rolling(window=60).mean()
         else:
-            df['MA60'] = df['MA20']  # 数据不足时使用 MA20 替代
-        return df
+            out['MA60'] = out['MA20']  # 数据不足时使用 MA20 替代（报告语义，不进入图表契约）
+        return out
 
     def _calculate_macd(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        计算 MACD 指标
-
-        公式：
-        - EMA(12)：12日指数移动平均
-        - EMA(26)：26日指数移动平均
-        - DIF = EMA(12) - EMA(26)
-        - DEA = EMA(DIF, 9)
-        - MACD = (DIF - DEA) * 2
-        """
-        df = df.copy()
-
-        # 计算快慢线 EMA
-        ema_fast = df['close'].ewm(span=self.MACD_FAST, adjust=False).mean()
-        ema_slow = df['close'].ewm(span=self.MACD_SLOW, adjust=False).mean()
-
-        # 计算快线 DIF
-        df['MACD_DIF'] = ema_fast - ema_slow
-
-        # 计算信号线 DEA
-        df['MACD_DEA'] = df['MACD_DIF'].ewm(span=self.MACD_SIGNAL, adjust=False).mean()
-
-        # 计算柱状图
-        df['MACD_BAR'] = (df['MACD_DIF'] - df['MACD_DEA']) * 2
-
-        return df
+        """计算 MACD（共享引擎；报告侧不应用图表预热 null 掩码）。"""
+        computed = compute_report_indicator_frame(df)
+        out = df.copy()
+        out['MACD_DIF'] = computed['MACD_DIF']
+        out['MACD_DEA'] = computed['MACD_DEA']
+        out['MACD_BAR'] = computed['MACD_BAR']
+        return out
 
     def _calculate_rsi(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        计算 RSI 指标（Wilder's EMA / SMMA 口径）
-
-        公式：
-        - avg_gain / avg_loss 使用 ewm(alpha=1/period, adjust=False)
-        - RS = avg_gain / avg_loss
-        - RSI = 100 - (100 / (1 + RS))
-        """
-        df = df.copy()
-
+        """计算 RSI（共享 Wilder 实现；报告兼容 fillna(50)）。"""
+        out = df.copy()
         for period in [self.RSI_SHORT, self.RSI_MID, self.RSI_LONG]:
-            # 计算价格变化
-            delta = df['close'].diff()
-
-            # 分离上涨和下跌
-            gain = delta.where(delta > 0, 0)
-            loss = -delta.where(delta < 0, 0)
-
-            # 使用 Wilder's EMA / SMMA 口径，与常见 RSI 图表工具保持一致。
-            avg_gain = gain.ewm(alpha=1 / period, adjust=False).mean()
-            avg_loss = loss.ewm(alpha=1 / period, adjust=False).mean()
-
-            # 计算 RS 和 RSI
-            rs = avg_gain / avg_loss
-            rsi = 100 - (100 / (1 + rs))
-
-            # 填充 NaN 值
-            rsi = rsi.fillna(50)  # 默认中性值
-
-            # 添加到 DataFrame
-            col_name = f'RSI_{period}'
-            df[col_name] = rsi
-
-        return df
+            out[f'RSI_{period}'] = wilder_rsi(out['close'], period, fill_neutral=True)
+        return out
     
     def _analyze_trend(self, df: pd.DataFrame, result: TrendAnalysisResult) -> None:
         """

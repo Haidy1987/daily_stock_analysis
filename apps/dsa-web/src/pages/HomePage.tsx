@@ -5,6 +5,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { getParsedApiError, type ParsedApiError } from '../api/error';
 import { analysisApi } from '../api/analysis';
 import { historyApi } from '../api/history';
+import { buildTechnicalChartHref } from '../api/technicalChart';
 import { agentApi, type SkillInfo } from '../api/agent';
 import { systemConfigApi } from '../api/systemConfig';
 import { ApiErrorAlert, Button, Drawer, EmptyState, InlineAlert } from '../components/common';
@@ -975,6 +976,16 @@ const HomePage: React.FC = () => {
                       {t('home.rerunMarketReview')}
                     </Button>
                   )}
+                  {!isMarketReviewHistoryReport && selectedReport.meta.stockCode ? (
+                    <Button
+                      variant="home-action-ai"
+                      size="sm"
+                      onClick={() => navigate(buildTechnicalChartHref({ stock: selectedReport.meta.stockCode! }))}
+                    >
+                      <BarChart3 className="h-4 w-4" />
+                      {t('home.openTechnicalChart')}
+                    </Button>
+                  ) : null}
                   <Button
                     variant="home-action-ai"
                     size="sm"

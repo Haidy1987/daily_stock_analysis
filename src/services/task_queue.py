@@ -49,6 +49,11 @@ def _dedupe_stock_code_key(stock_code: str) -> str:
     return resolve_index_stock_code_for_analysis(normalize_stock_code(stock_code))
 
 
+def _analyzing_dedupe_key(user_id: int, stock_code: str) -> str:
+    """Scope duplicate detection per user and normalized stock code."""
+    return f"{user_id}:{_dedupe_stock_code_key(stock_code)}"
+
+
 class TaskStatus(str, Enum):
     """Task status enumeration"""
     PENDING = "pending"        # Waiting for execution
@@ -86,6 +91,7 @@ class TaskInfo:
     skills: Optional[List[str]] = None
     report_language: Optional[str] = None
     trace_id: Optional[str] = None
+    user_id: int = 0
     flow_events: List[Dict[str, Any]] = field(default_factory=list)
     
     def to_dict(self) -> Dict[str, Any]:
@@ -107,6 +113,7 @@ class TaskInfo:
             "original_query": self.original_query,
             "selection_source": self.selection_source,
             "skills": self.skills,
+            "user_id": self.user_id,
         }
     
     def copy(self) -> 'TaskInfo':
@@ -132,6 +139,7 @@ class TaskInfo:
             skills=list(self.skills) if self.skills is not None else None,
             report_language=self.report_language,
             trace_id=self.trace_id or self.task_id,
+            user_id=self.user_id,
             flow_events=copy.deepcopy(self.flow_events),
         )
 
@@ -275,31 +283,33 @@ class AnalysisTaskQueue:
     
     # ========== 任务提交与查询 ==========
     
-    def is_analyzing(self, stock_code: str) -> bool:
+    def is_analyzing(self, stock_code: str, user_id: int) -> bool:
         """
         检查股票是否正在分析中
         
         Args:
             stock_code: 股票代码
+            user_id: 任务所属用户 ID
             
         Returns:
             True 表示正在分析中
         """
-        dedupe_key = _dedupe_stock_code_key(stock_code)
+        dedupe_key = _analyzing_dedupe_key(user_id, stock_code)
         with self._data_lock:
             return dedupe_key in self._analyzing_stocks
     
-    def get_analyzing_task_id(self, stock_code: str) -> Optional[str]:
+    def get_analyzing_task_id(self, stock_code: str, user_id: int) -> Optional[str]:
         """
         获取正在分析该股票的任务 ID
         
         Args:
             stock_code: 股票代码
+            user_id: 任务所属用户 ID
             
         Returns:
             任务 ID，如果没有则返回 None
         """
-        dedupe_key = _dedupe_stock_code_key(stock_code)
+        dedupe_key = _analyzing_dedupe_key(user_id, stock_code)
         with self._data_lock:
             return self._analyzing_stocks.get(dedupe_key)
 
@@ -322,6 +332,7 @@ class AnalysisTaskQueue:
     def submit_task(
         self,
         stock_code: str,
+        user_id: int,
         stock_name: Optional[str] = None,
         original_query: Optional[str] = None,
         selection_source: Optional[str] = None,
@@ -357,6 +368,7 @@ class AnalysisTaskQueue:
 
         accepted, duplicates = self.submit_tasks_batch(
             [stock_code],
+            user_id=user_id,
             stock_name=stock_name,
             original_query=original_query,
             selection_source=selection_source,
@@ -375,6 +387,7 @@ class AnalysisTaskQueue:
     def submit_tasks_batch(
         self,
         stock_codes: List[str],
+        user_id: int,
         stock_name: Optional[str] = None,
         original_query: Optional[str] = None,
         selection_source: Optional[str] = None,
@@ -406,7 +419,7 @@ class AnalysisTaskQueue:
 
         with self._data_lock:
             for stock_code in canonical_codes:
-                dedupe_key = _dedupe_stock_code_key(stock_code)
+                dedupe_key = _analyzing_dedupe_key(user_id, stock_code)
                 if dedupe_key in self._analyzing_stocks:
                     existing_task_id = self._analyzing_stocks[dedupe_key]
                     duplicates.append(DuplicateTaskError(stock_code, existing_task_id))
@@ -429,6 +442,7 @@ class AnalysisTaskQueue:
                     portfolio_context=dict(portfolio_context) if isinstance(portfolio_context, dict) else None,
                     skills=task_skills,
                     report_language=report_language,
+                    user_id=user_id,
                 )
                 self._tasks[task_id] = task_info
                 self._analyzing_stocks[dedupe_key] = task_id
@@ -466,6 +480,7 @@ class AnalysisTaskQueue:
         self,
         run_task: Callable[[], Optional[Any]],
         *,
+        user_id: int,
         stock_code: str,
         stock_name: Optional[str] = None,
         report_type: str = "detailed",
@@ -488,6 +503,7 @@ class AnalysisTaskQueue:
             status=TaskStatus.PENDING,
             message=message,
             report_type=report_type,
+            user_id=user_id,
         )
 
         with self._data_lock:
@@ -514,23 +530,28 @@ class AnalysisTaskQueue:
 
             task = self._tasks.pop(task_id, None)
             if task:
-                dedupe_key = _dedupe_stock_code_key(task.stock_code)
+                dedupe_key = _analyzing_dedupe_key(task.user_id, task.stock_code)
                 if self._analyzing_stocks.get(dedupe_key) == task_id:
                     del self._analyzing_stocks[dedupe_key]
     
-    def get_task(self, task_id: str) -> Optional[TaskInfo]:
+    def get_task(self, task_id: str, user_id: Optional[int] = None) -> Optional[TaskInfo]:
         """
         获取任务信息
         
         Args:
             task_id: 任务 ID
+            user_id: 可选用户 ID；提供时仅返回匹配用户的任务
             
         Returns:
             TaskInfo 或 None
         """
         with self._data_lock:
             task = self._tasks.get(task_id)
-            return task.copy() if task else None
+            if not task:
+                return None
+            if user_id is not None and task.user_id != user_id:
+                return None
+            return task.copy()
 
     def append_task_flow_event(
         self,
@@ -570,7 +591,7 @@ class AnalysisTaskQueue:
                 return []
             return copy.deepcopy(task.flow_events)
     
-    def list_pending_tasks(self) -> List[TaskInfo]:
+    def list_pending_tasks(self, user_id: Optional[int] = None) -> List[TaskInfo]:
         """
         获取所有进行中的任务（pending + processing）
         
@@ -581,27 +602,32 @@ class AnalysisTaskQueue:
             return [
                 task.copy() for task in self._tasks.values()
                 if task.status in (TaskStatus.PENDING, TaskStatus.PROCESSING, TaskStatus.CANCEL_REQUESTED)
+                and (user_id is None or task.user_id == user_id)
             ]
     
-    def list_all_tasks(self, limit: int = 50) -> List[TaskInfo]:
+    def list_all_tasks(self, limit: int = 50, user_id: Optional[int] = None) -> List[TaskInfo]:
         """
         获取所有任务（按创建时间倒序）
         
         Args:
             limit: 返回数量限制
+            user_id: 可选用户 ID 过滤
             
         Returns:
             任务列表（副本）
         """
         with self._data_lock:
             tasks = sorted(
-                self._tasks.values(),
+                [
+                    task for task in self._tasks.values()
+                    if user_id is None or task.user_id == user_id
+                ],
                 key=lambda t: t.created_at,
                 reverse=True
             )
             return [t.copy() for t in tasks[:limit]]
     
-    def get_task_stats(self) -> Dict[str, int]:
+    def get_task_stats(self, user_id: Optional[int] = None) -> Dict[str, int]:
         """
         获取任务统计信息
         
@@ -609,14 +635,18 @@ class AnalysisTaskQueue:
             统计信息字典
         """
         with self._data_lock:
+            scoped_tasks = [
+                task for task in self._tasks.values()
+                if user_id is None or task.user_id == user_id
+            ]
             stats = {
-                "total": len(self._tasks),
+                "total": len(scoped_tasks),
                 "pending": 0,
                 "processing": 0,
                 "completed": 0,
                 "failed": 0,
             }
-            for task in self._tasks.values():
+            for task in scoped_tasks:
                 stats[task.status.value] = stats.get(task.status.value, 0) + 1
             return stats
 
@@ -686,6 +716,7 @@ class AnalysisTaskQueue:
             if not task:
                 return None
             trace_id = task.trace_id or task_id
+            task_user_id = task.user_id
             analysis_phase = task.analysis_phase
             query_source = task.query_source or "api"
             portfolio_context = dict(task.portfolio_context) if isinstance(task.portfolio_context, dict) else None
@@ -729,6 +760,7 @@ class AnalysisTaskQueue:
                 query_source=query_source,
                 portfolio_context=portfolio_context,
                 report_language=report_language,
+                user_id=task_user_id,
             )
             reset_run_diagnostic_context(diag_token)
             diag_token = None
@@ -746,7 +778,7 @@ class AnalysisTaskQueue:
                         task.stock_name = result.get("stock_name", task.stock_name)
                         
                         # 从分析中集合移除
-                        dedupe_key = _dedupe_stock_code_key(task.stock_code)
+                        dedupe_key = _analyzing_dedupe_key(task.user_id, task.stock_code)
                         if dedupe_key in self._analyzing_stocks:
                             del self._analyzing_stocks[dedupe_key]
                 
@@ -776,7 +808,7 @@ class AnalysisTaskQueue:
                     task.message = f"分析失败: {error_msg[:50]}"
                     
                     # 从分析中集合移除
-                    dedupe_key = _dedupe_stock_code_key(task.stock_code)
+                    dedupe_key = _analyzing_dedupe_key(task.user_id, task.stock_code)
                     if dedupe_key in self._analyzing_stocks:
                         del self._analyzing_stocks[dedupe_key]
             

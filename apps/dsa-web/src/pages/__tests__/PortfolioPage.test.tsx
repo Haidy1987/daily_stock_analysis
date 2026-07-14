@@ -8,6 +8,16 @@ import type { DecisionSignalItem } from '../../types/decisionSignals';
 import { UI_LANGUAGE_STORAGE_KEY } from '../../utils/uiLanguage';
 import PortfolioPage from '../PortfolioPage';
 
+const navigateMock = vi.fn();
+
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
+  return {
+    ...actual,
+    useNavigate: () => navigateMock,
+  };
+});
+
 const {
   getAccounts,
   getSnapshot,
@@ -868,6 +878,21 @@ describe('PortfolioPage FX refresh', () => {
       });
     });
     expect(await screen.findByText('已提交 HK00700 分析任务：task-portfolio-1')).toBeInTheDocument();
+  });
+
+  it('opens technical chart with canonical symbol only and no portfolio fields in URL', async () => {
+    getSnapshot.mockResolvedValueOnce(makeSnapshot({ fxStale: true, positions: [
+      { symbol: 'HK00700', market: 'hk', currency: 'HKD', quantity: 10, avgCost: 400, totalCost: 4000, lastPrice: 420, marketValueBase: 4200, unrealizedPnlBase: 200, unrealizedPnlPct: 5, valuationCurrency: 'HKD', priceSource: 'history_close', priceDate: '2026-03-18', priceStale: true, priceAvailable: true },
+    ] }));
+
+    render(<PortfolioPage />);
+    await waitForInitialLoad();
+
+    fireEvent.click(screen.getByTestId('portfolio-technical-chart-HK00700'));
+
+    expect(navigateMock).toHaveBeenCalledWith('/technical-chart?stock=HK00700');
+    const href = String(navigateMock.mock.calls[0]?.[0] ?? '');
+    expect(href).not.toMatch(/accountId|avgCost|unrealized|user_id|totalCost/i);
   });
 
   it('prefers disabled feedback over empty-pair feedback when refresh is disabled', async () => {

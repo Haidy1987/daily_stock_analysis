@@ -38,7 +38,9 @@ import {
   type AlphaSiftStrategy,
 } from '../api/alphasift';
 import { formatParsedApiError, getParsedApiError, toApiErrorMessage, type ParsedApiError } from '../api/error';
+import { buildTechnicalChartHref } from '../api/technicalChart';
 import { AppPage, Button, InlineAlert } from '../components/common';
+import { useUiLanguage } from '../contexts/UiLanguageContext';
 
 const MARKETS = [{ id: 'cn', label: 'A 股' }];
 const SCREEN_TASK_STORAGE_KEY = 'dsa.alphasift.activeScreenTask.v1';
@@ -445,6 +447,7 @@ const MiniSparkline: React.FC<{ score?: number | null; selected?: boolean }> = (
 
 const StockScreeningPage: React.FC = () => {
   const navigate = useNavigate();
+  const { t } = useUiLanguage();
   const [restoredTask] = useState<PersistedScreenTask | null>(() => readPersistedScreenTask());
   const [enabled, setEnabled] = useState(false);
   const [available, setAvailable] = useState(false);
@@ -1097,15 +1100,25 @@ const StockScreeningPage: React.FC = () => {
                               {stock.role || '概念股'}
                             </span>
                             {stock.code ? (
-                              <button
-                                type="button"
-                                aria-label={`分析 ${stock.name || stock.code}`}
-                                className="inline-flex h-7 items-center gap-1 rounded-full border border-cyan/30 bg-cyan/10 px-2 text-[11px] font-semibold text-cyan transition-colors hover:border-cyan hover:bg-cyan/15 hover:text-foreground"
-                                onClick={() => handleAnalyzeHotspotStock(stock)}
-                              >
-                                <Play className="h-3 w-3" />
-                                分析
-                              </button>
+                              <>
+                                <button
+                                  type="button"
+                                  aria-label={`分析 ${stock.name || stock.code}`}
+                                  className="inline-flex h-7 items-center gap-1 rounded-full border border-cyan/30 bg-cyan/10 px-2 text-[11px] font-semibold text-cyan transition-colors hover:border-cyan hover:bg-cyan/15 hover:text-foreground"
+                                  onClick={() => handleAnalyzeHotspotStock(stock)}
+                                >
+                                  <Play className="h-3 w-3" />
+                                  分析
+                                </button>
+                                <button
+                                  type="button"
+                                  aria-label={t('technicalChart.openChart')}
+                                  className="inline-flex h-7 items-center gap-1 rounded-full border border-border/70 bg-card/80 px-2 text-[11px] font-semibold text-secondary-text transition-colors hover:border-cyan/40 hover:text-foreground"
+                                  onClick={() => navigate(buildTechnicalChartHref({ stock: stock.code! }))}
+                                >
+                                  {t('technicalChart.openChart')}
+                                </button>
+                              </>
                             ) : null}
                           </div>
                         </div>
@@ -1345,13 +1358,22 @@ const StockScreeningPage: React.FC = () => {
                           </span>
                         </td>
                         <td className="px-4 py-3">
-                          <button
-                            className="text-sm font-semibold text-cyan transition-colors hover:text-foreground"
-                            type="button"
-                            onClick={() => setExpandedCode(expanded ? null : item.code)}
-                          >
-                            {expanded ? '收起' : '展开查看'}
-                          </button>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              className="text-sm font-semibold text-cyan transition-colors hover:text-foreground"
+                              type="button"
+                              onClick={() => setExpandedCode(expanded ? null : item.code)}
+                            >
+                              {expanded ? '收起' : '展开查看'}
+                            </button>
+                            <button
+                              type="button"
+                              className="text-sm font-semibold text-secondary-text transition-colors hover:text-foreground"
+                              onClick={() => navigate(buildTechnicalChartHref({ stock: item.code }))}
+                            >
+                              {t('technicalChart.openChart')}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                       {expanded ? (

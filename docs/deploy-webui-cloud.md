@@ -331,9 +331,16 @@ sudo systemctl reload nginx
 ADMIN_AUTH_ENABLED=true
 ```
 
-重启服务后，第一次访问网页时会要求设置初始密码。设置完成后，每次打开设置页面都需要输入密码，可以防止 API Key 等敏感配置被他人看到。
+重启服务后，第一次访问网页时会要求为默认管理员账号 `admin` 设置初始密码。登录后 Cookie 名仍为 `dsa_session`，会话保存在数据库 `user_sessions` 表。系统配置写入、`.env` 导入导出等敏感操作需要 `admin` 角色。管理员可在 Web「用户管理」页创建普通用户；所有登录用户可在「个人账户」页修改密码并退出全部设备。
 
-> 如果忘了密码，可以在服务器上执行：`python -m src.auth reset_password`
+灰度建议：先设 `AUTH_MODE=single_admin` 验证管理员登录与迁移，再改为 `AUTH_MODE=multi_user` 后创建测试用户。完整切换、备份与回滚见 [多用户切换与验收说明](plans/multi-user-cutover.md)。
+
+相关 API：
+- 认证：`GET /api/v1/auth/status`、`GET /api/v1/auth/me`、`POST /api/v1/auth/login`、`POST /api/v1/auth/logout`、`POST /api/v1/auth/logout-all`、`POST /api/v1/auth/change-password`
+- 管理员用户：`GET/POST /api/v1/admin/users`、`PATCH/DELETE /api/v1/admin/users/{id}`、`POST /api/v1/admin/users/{id}/reset-password`、`POST /api/v1/admin/users/{id}/revoke-sessions`
+
+> 如果忘了管理员密码，可以在服务器上执行：`python -m src.auth reset_password`
+> 若升级前已有 `.admin_password_hash`，数据库初始化时会自动迁移为 `users` 表中的 `admin` 用户。
 
 ---
 

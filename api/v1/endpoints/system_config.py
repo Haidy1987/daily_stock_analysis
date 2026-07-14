@@ -7,7 +7,7 @@ import os
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
-from api.deps import get_runtime_scheduler_service, get_system_config_service
+from api.deps import get_runtime_scheduler_service, get_system_config_service, require_admin
 from api.v1.schemas.common import ErrorResponse
 from api.v1.schemas.system_config import (
     DiscoverLLMChannelModelsRequest,
@@ -32,7 +32,7 @@ from api.v1.schemas.system_config import (
     ValidateSystemConfigRequest,
     ValidateSystemConfigResponse,
 )
-from src.auth import COOKIE_NAME, is_auth_enabled, refresh_auth_state, verify_session
+from src.auth import COOKIE_NAME, is_auth_enabled, refresh_auth_state, resolve_session
 from src.services.system_config_service import (
     ConfigConflictError,
     ConfigImportError,
@@ -93,7 +93,7 @@ def _allow_env_backup_access(request: Request) -> None:
     """Gate raw .env backup/restore to explicit secure modes.
 
     - Desktop runtime keeps existing local behavior via DSA_DESKTOP_MODE.
-    - Non-desktop runtime must have admin auth enabled and a valid session.
+    - Non-desktop runtime must have admin auth enabled and a valid admin session.
     """
     if os.getenv("DSA_DESKTOP_MODE") == "true":
         return
@@ -106,8 +106,15 @@ def _allow_env_backup_access(request: Request) -> None:
         )
 
     cookie_val = request.cookies.get(COOKIE_NAME)
-    if cookie_val and verify_session(cookie_val):
+    user = resolve_session(cookie_val) if cookie_val else None
+    if user is not None and user.role == "admin":
         return
+
+    if user is not None:
+        raise EnvBackupAccessDenied(
+            status_code=403,
+            message="System config backup requires an admin session",
+        )
 
     raise EnvBackupAccessDenied(
         status_code=401,
@@ -330,6 +337,7 @@ def test_generation_backend(
 def update_system_config(
     request: UpdateSystemConfigRequest,
     service: SystemConfigService = Depends(get_system_config_service),
+    _admin=Depends(require_admin),
 ) -> UpdateSystemConfigResponse:
     """Validate and persist system configuration updates."""
     try:

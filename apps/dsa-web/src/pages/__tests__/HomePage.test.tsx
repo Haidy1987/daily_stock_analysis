@@ -944,6 +944,25 @@ describe('HomePage', () => {
     );
   });
 
+  it('navigates to technical chart with canonical stock code from the current report', async () => {
+    vi.mocked(historyApi.getList).mockResolvedValue({
+      total: 1,
+      page: 1,
+      limit: 20,
+      items: [historyItem],
+    });
+    vi.mocked(historyApi.getDetail).mockResolvedValue(historyReport);
+
+    render(
+      <MemoryRouter>
+        <HomePage />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: '查看技术图表' }));
+    expect(navigateMock).toHaveBeenCalledWith('/technical-chart?stock=600519');
+  });
+
   it('opens and closes the mobile history drawer without changing dashboard styles', async () => {
     vi.mocked(historyApi.getList).mockResolvedValue({
       total: 0,

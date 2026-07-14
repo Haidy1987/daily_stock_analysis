@@ -26,10 +26,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, Union, Dict, Any
 
-from fastapi import APIRouter, HTTPException, Depends, Query, Body
+from fastapi import APIRouter, HTTPException, Depends, Query, Body, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from api.deps import get_config_dep
+from api.deps import get_config_dep, resolve_effective_user_id
 from api.v1.errors import api_error
 from api.v1.schemas.analysis import (
     AnalyzeRequest,
@@ -274,6 +274,7 @@ def _resolve_and_normalize_input(raw_value: str) -> str:
 )
 def trigger_analysis(
         request: AnalyzeRequest,
+        http_request: Request,
         config: Config = Depends(get_config_dep)
 ) -> Union[AnalysisResultResponse, JSONResponse]:
     """
@@ -341,19 +342,21 @@ def trigger_analysis(
                 "validation_error",
                 "同步模式仅支持单只股票分析，请使用 async_mode=true 进行批量分析",
             )
-        return _handle_sync_analysis(stock_codes[0], request)
+        return _handle_sync_analysis(stock_codes[0], request, http_request)
 
     # Async mode submits one task per stock.
-    return _handle_async_analysis_batch(stock_codes, request)
+    return _handle_async_analysis_batch(stock_codes, request, http_request)
 
 
 def _handle_async_analysis_batch(
     stock_codes: list,
-    request: AnalyzeRequest
+    request: AnalyzeRequest,
+    http_request: Request,
 ) -> JSONResponse:
     """
     Handle asynchronous analysis requests, including batch submission.
     """
+    user_id = resolve_effective_user_id(http_request)
     task_queue = get_task_queue()
     
     # Preserve metadata for single-stock requests. For batch requests,
@@ -372,6 +375,7 @@ def _handle_async_analysis_batch(
 
     submit_kwargs = dict(
         stock_codes=stock_codes,
+        user_id=user_id,
         stock_name=stock_name,
         original_query=original_query,
         selection_source=selection_source,
@@ -449,7 +453,8 @@ def _handle_async_analysis_batch(
 
 def _handle_sync_analysis(
     stock_code: str,
-    request: AnalyzeRequest
+    request: AnalyzeRequest,
+    http_request: Request,
 ) -> AnalysisResultResponse:
     """
     处理同步分析请求
@@ -460,6 +465,7 @@ def _handle_sync_analysis(
     from src.services.analysis_service import AnalysisService
     
     query_id = uuid.uuid4().hex
+    user_id = resolve_effective_user_id(http_request)
     
     try:
         service = AnalysisService()
@@ -472,6 +478,7 @@ def _handle_sync_analysis(
             skills=getattr(request, "skills", None),
             analysis_phase=request.analysis_phase,
             report_language=getattr(request, "report_language", None),
+            user_id=user_id,
         )
 
         if result is None:
@@ -483,6 +490,7 @@ def _handle_sync_analysis(
         context_snapshot, fundamental_snapshot = _load_sync_fundamental_sources(
             query_id=query_id,
             stock_code=result.get("stock_code", stock_code),
+            user_id=user_id,
         )
         report = _build_analysis_report(
             report_data,
@@ -527,11 +535,13 @@ def _handle_sync_analysis(
     description="提交一个后台大盘复盘任务，复用 CLI 的大盘复盘运行时装配并保存报告。该人工触发入口不按交易日检查跳过；接口内部仅提供进程内/单机防重，如多实例（多 Worker/多容器）部署，需结合外部幂等机制避免重复触发。",
 )
 def trigger_market_review(
+    http_request: Request,
     request: Optional[MarketReviewRequest] = Body(None),
     config: Config = Depends(get_config_dep),
 ) -> MarketReviewAccepted:
     """Trigger market review from Web/API without blocking the request."""
     request = request or MarketReviewRequest()
+    user_id = resolve_effective_user_id(http_request)
 
     runtime_config = _with_request_report_language(
         config,
@@ -559,6 +569,7 @@ def trigger_market_review(
                 config=runtime_config,
                 query_id=task_id,
             ),
+            user_id=user_id,
             stock_code="market_review",
             stock_name="大盘复盘",
             message="大盘复盘任务已提交",
@@ -591,6 +602,7 @@ def trigger_market_review(
     description="获取当前所有分析任务，可按状态筛选"
 )
 def get_task_list(
+    http_request: Request,
     status: Optional[str] = Query(
         None,
         description="筛选状态：pending, processing, completed, failed, cancel_requested, cancelled（支持逗号分隔多个）"
@@ -607,10 +619,11 @@ def get_task_list(
     Returns:
         TaskListResponse: 任务列表响应
     """
+    user_id = resolve_effective_user_id(http_request)
     task_queue = get_task_queue()
     
-    # 获取所有任务
-    all_tasks = task_queue.list_all_tasks(limit=limit)
+    # 获取当前用户的任务
+    all_tasks = task_queue.list_all_tasks(limit=limit, user_id=user_id)
     
     # 状态筛选
     if status:
@@ -618,7 +631,7 @@ def get_task_list(
         all_tasks = [t for t in all_tasks if t.status.value in status_list]
     
     # 统计信息
-    stats = task_queue.get_task_stats()
+    stats = task_queue.get_task_stats(user_id=user_id)
     
     # 转换为 Schema
     task_infos = [
@@ -663,7 +676,7 @@ def get_task_list(
     summary="任务状态 SSE 流",
     description="通过 Server-Sent Events 实时推送任务状态变化"
 )
-async def task_stream():
+async def task_stream(http_request: Request):
     """
     SSE 任务状态流
     
@@ -679,6 +692,8 @@ async def task_stream():
     Returns:
         StreamingResponse: SSE 事件流
     """
+    user_id = resolve_effective_user_id(http_request)
+
     async def event_generator():
         task_queue = get_task_queue()
         event_queue: asyncio.Queue = asyncio.Queue()
@@ -687,7 +702,7 @@ async def task_stream():
         yield _format_sse_event("connected", {"message": "Connected to task stream"})
         
         # 发送当前进行中的任务
-        pending_tasks = task_queue.list_pending_tasks()
+        pending_tasks = task_queue.list_pending_tasks(user_id=user_id)
         for task in pending_tasks:
             yield _format_sse_event("task_created", task.to_dict())
         
@@ -699,6 +714,9 @@ async def task_stream():
                 try:
                     # 等待事件，超时发送心跳
                     event = await asyncio.wait_for(event_queue.get(), timeout=30)
+                    event_user_id = event.get("data", {}).get("user_id")
+                    if event_user_id is not None and event_user_id != user_id:
+                        continue
                     yield _format_sse_event(event["type"], event["data"])
                 except asyncio.TimeoutError:
                     # 心跳
@@ -741,6 +759,7 @@ def _load_history_run_flow_by_query_id(
     *,
     code: Optional[str] = None,
     report_type: Optional[str] = None,
+    user_id: Optional[int] = None,
     fail_open: bool = False,
 ) -> Optional[RunFlowSnapshot]:
     try:
@@ -752,6 +771,7 @@ def _load_history_run_flow_by_query_id(
             query_id,
             code=code,
             report_type=report_type,
+            user_id=user_id,
         )
     except Exception as e:
         if fail_open:
@@ -775,15 +795,16 @@ def _load_history_run_flow_by_query_id(
     summary="获取分析任务运行流",
     description="根据 task_id 查询任务数据流/信息流快照；活跃任务缺少诊断时返回骨架流。",
 )
-def get_task_run_flow(task_id: str) -> RunFlowSnapshot:
+def get_task_run_flow(http_request: Request, task_id: str) -> RunFlowSnapshot:
     """
     查询分析任务运行流。
 
     Active tasks are served from the in-memory task queue. Completed tasks try
     to hydrate from persisted history diagnostics using the same task_id/query_id.
     """
+    user_id = resolve_effective_user_id(http_request)
     task_queue = get_task_queue()
-    task = task_queue.get_task(task_id)
+    task = task_queue.get_task(task_id, user_id=user_id)
 
     if task:
         if task.status == TaskStatusEnum.COMPLETED:
@@ -797,6 +818,7 @@ def get_task_run_flow(task_id: str) -> RunFlowSnapshot:
                 task_id,
                 code=task_stock_code,
                 report_type=task_report_type,
+                user_id=user_id,
                 fail_open=True,
             )
             if history_snapshot is not None:
@@ -804,7 +826,7 @@ def get_task_run_flow(task_id: str) -> RunFlowSnapshot:
         return build_task_run_flow_snapshot(task)
 
     try:
-        history_snapshot = _load_history_run_flow_by_query_id(task_id)
+        history_snapshot = _load_history_run_flow_by_query_id(task_id, user_id=user_id)
         if history_snapshot is not None:
             return history_snapshot
     except Exception as e:
@@ -961,6 +983,7 @@ def _build_task_analysis_result(task: Any) -> AnalysisResultResponse:
         context_snapshot, fundamental_snapshot = _load_sync_fundamental_sources(
             query_id=query_id,
             stock_code=stock_code,
+            user_id=getattr(task, "user_id", None),
         )
         if context_snapshot is not None or fundamental_snapshot is not None:
             try:
@@ -1012,7 +1035,7 @@ def _build_task_analysis_result(task: Any) -> AnalysisResultResponse:
     summary="查询分析任务状态",
     description="根据 task_id 查询单个任务的状态"
 )
-def get_analysis_status(task_id: str) -> TaskStatus:
+def get_analysis_status(http_request: Request, task_id: str) -> TaskStatus:
     """
     查询分析任务状态
     
@@ -1027,9 +1050,10 @@ def get_analysis_status(task_id: str) -> TaskStatus:
     Raises:
         HTTPException: 404 - 任务不存在
     """
+    user_id = resolve_effective_user_id(http_request)
     # 1. 先从任务队列查询
     task_queue = get_task_queue()
-    task = task_queue.get_task(task_id)
+    task = task_queue.get_task(task_id, user_id=user_id)
     
     if task:
         result: Optional[AnalysisResultResponse] = None
@@ -1073,7 +1097,7 @@ def get_analysis_status(task_id: str) -> TaskStatus:
     try:
         from src.storage import DatabaseManager
         db = DatabaseManager.get_instance()
-        records = db.get_analysis_history(query_id=task_id, limit=1)
+        records = db.get_analysis_history(query_id=task_id, limit=1, user_id=user_id)
 
         if records:
             record = records[0]
@@ -1239,6 +1263,7 @@ def get_analysis_status(task_id: str) -> TaskStatus:
 def _load_sync_fundamental_sources(
     query_id: str,
     stock_code: str,
+    user_id: Optional[int] = None,
 ) -> tuple[Optional[Any], Optional[Dict[str, Any]]]:
     """
     Load context_snapshot and fallback fundamental snapshot for sync analyze response.
@@ -1247,7 +1272,12 @@ def _load_sync_fundamental_sources(
         from src.storage import DatabaseManager
 
         db = DatabaseManager.get_instance()
-        records = db.get_analysis_history(query_id=query_id, code=stock_code, limit=1)
+        records = db.get_analysis_history(
+            query_id=query_id,
+            code=stock_code,
+            limit=1,
+            user_id=user_id,
+        )
         context_snapshot = None
         if records:
             context_snapshot = parse_json_field(getattr(records[0], "context_snapshot", None))

@@ -9,6 +9,7 @@ import { Shell } from '../Shell';
 vi.mock('../../../contexts/AuthContext', () => ({
   useAuth: () => ({
     authEnabled: false,
+    currentUser: null,
     logout: vi.fn().mockResolvedValue(undefined),
   }),
 }));

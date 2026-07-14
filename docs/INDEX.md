@@ -65,6 +65,18 @@
 | --- | --- |
 | [API 规格](architecture/api_spec.json) | FastAPI OpenAPI 规格产物 |
 | [贡献指南](CONTRIBUTING.md) | Issue、PR、测试、文档同步和协作要求 |
+| [项目瘦身规划](plans/project-slimming-plan.md) | 仓库资源、前端依赖、Python 依赖、代码复杂度和 Git 历史的分阶段瘦身方案 |
+| [多用户系统改造规划](plans/multi-user-system-plan.md) | 用户认证、角色权限、数据隔离、数据库迁移、部署和回滚方案 |
+| [多用户数据归属清单](plans/multi-user-data-inventory.md) | 阶段 0 盘点：认证现状、28 表归属、伪 user_id 语义、迁移策略与阶段前置条件 |
+| [多用户数据隔离迁移说明](plans/multi-user-isolation-migration.md) | 阶段 2：user_id 回填、自选股表、备份校验与回滚 |
+| [多用户切换与验收说明](plans/multi-user-cutover.md) | 阶段 4：AUTH_MODE 切换、备份恢复、Docker 要点与验收矩阵 |
+| [技术指标图表第一版需求](plans/technical-chart-v1-requirements.md) | K 线、均线、成交量、MACD、RSI、支撑压力图表的第一版需求与验收范围 |
+| [技术图表页面导航入口规划](plans/technical-chart-navigation-plan.md) | 技术图表一级导航、路由、股票上下文、权限边界和实施拆分 |
+| [技术图表页面结构设计](plans/technical-chart-page-structure-design.md) | 页面骨架、股票上下文、主图/副图布局、响应式结构和页面状态 |
+| [技术图表后端能力评估与补全计划](plans/technical-chart-backend-gap-analysis.md) | 当前 API、指标实现、周期能力差距及后端 P0/P1/P2 补全任务 |
+| [技术图表计算与 API 契约](plans/technical-chart-calculation-contract.md) | technical-v1 指标公式、空值规则、API 字段、错误语义与兼容边界（P0 冻结） |
+| [技术图表改造进度表](plans/technical-chart-implementation-progress.html) | 技术图表改造起点、阶段任务、指标清单、状态和验收记录 |
+| [Cursor 提词文档](cursor/README.md) | 多用户系统与技术指标图表按阶段拆分的 Cursor 执行提词、前置条件、验收标准和交接规则 |
 
 ## 多语言
 

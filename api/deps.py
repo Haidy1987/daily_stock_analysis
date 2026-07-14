@@ -8,13 +8,21 @@ API 依赖注入模块
 1. 提供数据库 Session 依赖
 2. 提供配置依赖
 3. 提供服务层依赖
+4. 提供当前用户 / 管理员依赖
 """
 
-from typing import Generator
+from typing import Generator, Optional
 
-from fastapi import Request
+from fastapi import HTTPException, Request
 from sqlalchemy.orm import Session
 
+from src.auth import (
+    COOKIE_NAME,
+    AuthUser,
+    get_default_admin_user_id,
+    is_auth_enabled,
+    resolve_session,
+)
 from src.storage import DatabaseManager
 from src.config import get_config, Config
 from src.services.system_config_service import SystemConfigService
@@ -79,3 +87,70 @@ def get_runtime_scheduler_service(request: Request) -> RuntimeSchedulerService:
         service = RuntimeSchedulerService()
         request.app.state.runtime_scheduler_service = service
     return service
+
+
+def get_optional_user(request: Request) -> Optional[AuthUser]:
+    """Resolve current user from session cookie when auth is enabled."""
+    if not is_auth_enabled():
+        return None
+    cookie_val = request.cookies.get(COOKIE_NAME)
+    if not cookie_val:
+        return None
+    return resolve_session(cookie_val)
+
+
+def get_current_user(request: Request) -> AuthUser:
+    """Require an authenticated active user when auth is enabled."""
+    if not is_auth_enabled():
+        raise HTTPException(
+            status_code=401,
+            detail={"error": "unauthorized", "message": "Login required"},
+        )
+    user = get_optional_user(request)
+    if user is None:
+        raise HTTPException(
+            status_code=401,
+            detail={"error": "unauthorized", "message": "Login required"},
+        )
+    return user
+
+
+def require_admin(request: Request) -> Optional[AuthUser]:
+    """
+    Require admin role when auth is enabled.
+
+    When auth is disabled (local/desktop open mode), returns None and allows access.
+    """
+    if not is_auth_enabled():
+        return None
+    user = get_current_user(request)
+    if user.role != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail={"error": "forbidden", "message": "Admin required"},
+        )
+    return user
+
+
+def get_scoped_user(request: Request) -> AuthUser:
+    """
+    Resolve the user that owns API data for this request.
+
+    - Auth enabled: require a valid session (401 if missing).
+    - Auth disabled: fall back to local admin (single-tenant compatibility).
+    """
+    if is_auth_enabled():
+        return get_current_user(request)
+    admin_id = get_default_admin_user_id(create_if_missing=True)
+    return AuthUser(
+        id=admin_id,
+        username="admin",
+        role="admin",
+        status="active",
+        session_id=0,
+    )
+
+
+def resolve_effective_user_id(request: Request) -> int:
+    """Return the local user_id that should own/filter user-private data."""
+    return int(get_scoped_user(request).id)

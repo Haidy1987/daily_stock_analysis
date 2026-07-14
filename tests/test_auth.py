@@ -5,12 +5,14 @@ import hashlib
 import os
 import secrets
 import tempfile
-import time
 import unittest
+from datetime import timedelta
 from pathlib import Path
 from unittest.mock import patch
 
 import src.auth as auth
+from src.config import Config
+from src.storage import DatabaseManager, utc_naive_now
 
 
 def _reset_auth_globals() -> None:
@@ -20,6 +22,12 @@ def _reset_auth_globals() -> None:
     auth._password_hash_salt = None
     auth._password_hash_stored = None
     auth._rate_limit = {}
+
+
+def _reset_db(data_dir: Path) -> None:
+    os.environ["DATABASE_PATH"] = str(data_dir / "test.db")
+    Config.reset_instance()
+    DatabaseManager.reset_instance()
 
 
 class AuthValidationTestCase(unittest.TestCase):
@@ -70,35 +78,42 @@ class AuthPasswordHashTestCase(unittest.TestCase):
         )
         self.assertFalse(auth._verify_password_hash("y", salt, derived))
 
+    def test_hash_password_roundtrip(self) -> None:
+        stored = auth.hash_password("secret123")
+        self.assertTrue(auth.verify_password_hash_string("secret123", stored))
+        self.assertFalse(auth.verify_password_hash_string("wrong", stored))
+
 
 class AuthSessionTestCase(unittest.TestCase):
-    """Test session creation and verification."""
+    """Test session creation and verification against user_sessions."""
 
     def setUp(self) -> None:
         _reset_auth_globals()
         self.temp_dir = tempfile.TemporaryDirectory()
         self.data_dir = Path(self.temp_dir.name)
         self.addCleanup(self.temp_dir.cleanup)
+        _reset_db(self.data_dir)
 
-    def _patch_env_and_run(
-        self, auth_enabled: bool = True, test_fn=None
-    ):
+    def tearDown(self) -> None:
+        DatabaseManager.reset_instance()
+        Config.reset_instance()
+        os.environ.pop("DATABASE_PATH", None)
+
+    def _patch_env_and_run(self, auth_enabled: bool = True, test_fn=None):
         with patch.object(auth, "_is_auth_enabled_from_env", return_value=auth_enabled):
             with patch.object(auth, "_get_data_dir", return_value=self.data_dir):
                 auth._auth_enabled = auth_enabled
+                if auth_enabled:
+                    auth.set_initial_password("password123")
                 if test_fn:
                     return test_fn()
 
-    def test_create_session_returns_signed_payload(self) -> None:
+    def test_create_session_returns_opaque_token(self) -> None:
         def run():
             tok = auth.create_session()
             self.assertTrue(tok, "session token should be non-empty")
-            parts = tok.split(".")
-            self.assertEqual(len(parts), 3, "format: nonce.ts.signature")
-            nonce, ts, sig = parts
-            self.assertTrue(nonce)
-            self.assertTrue(ts.isdigit())
-            self.assertTrue(sig)
+            self.assertNotEqual(tok.count("."), 2, "should not use legacy HMAC format")
+            self.assertTrue(auth.verify_session(tok))
             return tok
 
         self._patch_env_and_run(test_fn=run)
@@ -107,16 +122,27 @@ class AuthSessionTestCase(unittest.TestCase):
         def run():
             tok = auth.create_session()
             self.assertTrue(auth.verify_session(tok))
+            user = auth.resolve_session(tok)
+            self.assertIsNotNone(user)
+            self.assertEqual(user.username, "admin")
+            self.assertEqual(user.role, "admin")
 
         self._patch_env_and_run(test_fn=run)
 
     def test_verify_session_expired(self) -> None:
         def run():
-            past = time.time() - 48 * 3600
-            with patch.object(auth, "time") as mock_time:
-                mock_time.time.return_value = past
-                tok = auth.create_session()
-            self.assertFalse(auth.verify_session(tok), "48h-old token should be expired")
+            tok = auth.create_session()
+            self.assertTrue(auth.verify_session(tok))
+            repo = auth._get_user_repo()
+            sess = repo.get_session_by_token_hash(auth._hash_session_token(tok))
+            repo = auth._get_user_repo()
+            with repo.db.get_session() as session:
+                from src.storage import UserSessionRecord
+
+                row = session.get(UserSessionRecord, sess.id)
+                row.expires_at = utc_naive_now() - timedelta(hours=1)
+                session.commit()
+            self.assertFalse(auth.verify_session(tok), "expired token should be invalid")
 
         self._patch_env_and_run(test_fn=run)
 
@@ -125,6 +151,17 @@ class AuthSessionTestCase(unittest.TestCase):
             self.assertFalse(auth.verify_session(""))
             self.assertFalse(auth.verify_session("a.b"))
             self.assertFalse(auth.verify_session("invalid"))
+            # Legacy HMAC cookies must not validate after upgrade
+            self.assertFalse(auth.verify_session("nonce.1234567890." + ("a" * 64)))
+
+        self._patch_env_and_run(test_fn=run)
+
+    def test_revoke_session_token(self) -> None:
+        def run():
+            tok = auth.create_session()
+            self.assertTrue(auth.verify_session(tok))
+            self.assertTrue(auth.revoke_session_token(tok))
+            self.assertFalse(auth.verify_session(tok))
 
         self._patch_env_and_run(test_fn=run)
 
@@ -143,18 +180,13 @@ class AuthSessionTestCase(unittest.TestCase):
 
         self._patch_env_and_run(test_fn=run)
 
-    def test_load_session_secret_regenerates_invalid_length(self) -> None:
+    def test_disabled_user_session_rejected(self) -> None:
         def run():
-            secret_path = self.data_dir / ".session_secret"
-            secret_path.write_bytes(b"x")
-            secret_path.chmod(0o600)
-
             tok = auth.create_session()
-            self.assertTrue(tok)
-
-            new_secret = secret_path.read_bytes()
-            self.assertEqual(len(new_secret), 32)
-            self.assertNotEqual(new_secret, b"x")
+            user = auth.resolve_session(tok)
+            self.assertIsNotNone(user)
+            auth._get_user_repo().update_user(user.id, {"status": "disabled"})
+            self.assertFalse(auth.verify_session(tok))
 
         self._patch_env_and_run(test_fn=run)
 
@@ -191,6 +223,12 @@ class AuthSetPasswordTestCase(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.data_dir = Path(self.temp_dir.name)
         self.addCleanup(self.temp_dir.cleanup)
+        _reset_db(self.data_dir)
+
+    def tearDown(self) -> None:
+        DatabaseManager.reset_instance()
+        Config.reset_instance()
+        os.environ.pop("DATABASE_PATH", None)
 
     def _run_with_patch(self, fn):
         with patch.object(auth, "_is_auth_enabled_from_env", return_value=True):
@@ -205,6 +243,9 @@ class AuthSetPasswordTestCase(unittest.TestCase):
             self.assertIsNotNone(auth._password_hash_stored)
             self.assertTrue(auth.is_password_set())
             self.assertTrue(auth.verify_password("password123"))
+            user = auth._get_user_repo().get_user_by_username("admin")
+            self.assertIsNotNone(user)
+            self.assertEqual(user.role, "admin")
 
         self._run_with_patch(run)
 
@@ -241,13 +282,14 @@ class AuthSetPasswordTestCase(unittest.TestCase):
 
     def test_refresh_auth_state_clears_session_secret_cache(self) -> None:
         def run():
+            auth.set_initial_password("password123")
             first_secret = auth.create_session()
             self.assertTrue(first_secret)
             self.assertIsNotNone(auth._session_secret)
 
             auth._session_secret = b"x" * 32
             auth.refresh_auth_state()
-            self.assertNotEqual(auth._session_secret, b"x" * 32)
+            self.assertIsNone(auth._session_secret)
 
         self._run_with_patch(run)
 
@@ -284,6 +326,22 @@ class AuthSetPasswordTestCase(unittest.TestCase):
             self.assertIsNone(err)
             self.assertFalse(auth.verify_password("original"))
             self.assertTrue(auth.verify_password("resetpass"))
+
+        self._run_with_patch(run)
+
+    def test_migrate_admin_password_file_to_users(self) -> None:
+        def run():
+            content = auth.hash_password("legacy123")
+            (self.data_dir / ".admin_password_hash").write_text(content)
+            # Fresh DB so create_all + _ensure_admin_user_migrated picks up the file.
+            Config.reset_instance()
+            DatabaseManager.reset_instance()
+            DatabaseManager.get_instance()
+            user = auth._get_user_repo().get_user_by_username("admin")
+            self.assertIsNotNone(user)
+            self.assertTrue(auth.verify_password_hash_string("legacy123", user.password_hash))
+            # Second call is a no-op
+            self.assertFalse(auth.migrate_admin_password_file_to_users())
 
         self._run_with_patch(run)
 

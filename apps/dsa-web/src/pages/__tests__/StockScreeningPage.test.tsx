@@ -1076,4 +1076,36 @@ describe('StockScreeningPage', () => {
     expect(screen.getByText('DSA 增强提示')).toBeInTheDocument();
     expect(screen.getByText('stock_news_unavailable')).toBeInTheDocument();
   });
+
+  it('opens technical chart from candidate row with canonical code only', async () => {
+    getAlphaSiftStatus.mockResolvedValueOnce({
+      enabled: true,
+      available: true,
+      installSpecIsDefault: true,
+    });
+    screenStocks.mockResolvedValueOnce({
+      enabled: true,
+      candidates: [
+        {
+          rank: 1,
+          code: '600519',
+          name: '贵州茅台',
+          score: 91.2,
+          reason: 'AlphaSift pick',
+          raw: {},
+        },
+      ],
+      candidateCount: 1,
+    });
+
+    render(<StockScreeningPage />);
+    expect(await screen.findByText('选股已开启')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /运行选股/ }));
+    expect(await screen.findByText('600519')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '查看技术图表' }));
+    expect(navigate).toHaveBeenCalledWith('/technical-chart?stock=600519');
+    const href = String(navigate.mock.calls.at(-1)?.[0] ?? '');
+    expect(href).not.toMatch(/score|strategy|accountId/i);
+  });
 });

@@ -1,9 +1,20 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { UiLanguageProvider } from '../../../contexts/UiLanguageContext';
 import { UI_LANGUAGE_STORAGE_KEY } from '../../../utils/uiLanguage';
 import { StockHistoryTrendDrawer } from '../StockHistoryTrendDrawer';
 import type { AnalysisReport, HistoryItem } from '../../../types/analysis';
+
+const navigateMock = vi.fn();
+
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
+  return {
+    ...actual,
+    useNavigate: () => navigateMock,
+  };
+});
 
 const report: AnalysisReport = {
   meta: {
@@ -42,6 +53,34 @@ const items: HistoryItem[] = [
 describe('StockHistoryTrendDrawer', () => {
   beforeEach(() => {
     window.localStorage.clear();
+    window.localStorage.setItem(UI_LANGUAGE_STORAGE_KEY, 'zh');
+    navigateMock.mockReset();
+  });
+
+  it('navigates to technical chart with canonical stock code', () => {
+    render(
+      <UiLanguageProvider>
+        <MemoryRouter>
+          <StockHistoryTrendDrawer
+            report={report}
+            items={items}
+            total={1}
+            hasMore={false}
+            isLoading={false}
+            isLoadingMore={false}
+            filters={{ range: 'all', model: 'all', sort: 'desc' }}
+            onClose={vi.fn()}
+            onRangeChange={vi.fn()}
+            onLoadMore={vi.fn()}
+            onSelectRecord={vi.fn()}
+            onRetry={vi.fn()}
+          />
+        </MemoryRouter>
+      </UiLanguageProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '查看技术图表' }));
+    expect(navigateMock).toHaveBeenCalledWith('/technical-chart?stock=600519');
   });
 
   it('uses structured action in summary and rows', () => {

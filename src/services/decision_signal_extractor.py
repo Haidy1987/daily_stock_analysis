@@ -43,6 +43,7 @@ _CONFIDENCE_MAP = {
 def build_decision_signal_payload_from_report(
     result: AnalysisResult,
     *,
+    user_id: int,
     context_snapshot: Dict[str, Any] | None = None,
     portfolio_context: Dict[str, Any] | None = None,
     source_report_id: int | None = None,
@@ -140,6 +141,7 @@ def build_decision_signal_payload_from_report(
     metadata["holding_state"] = _extract_holding_state(portfolio_context)
 
     payload: Dict[str, Any] = {
+        "user_id": user_id,
         "stock_code": raw_code,
         "stock_name": getattr(result, "name", None),
         "market": market,
@@ -175,6 +177,7 @@ def build_decision_signal_payload_from_report(
 def extract_and_persist_from_analysis_result(
     result: AnalysisResult,
     *,
+    user_id: int,
     context_snapshot: Dict[str, Any] | None = None,
     portfolio_context: Dict[str, Any] | None = None,
     source_report_id: int | None = None,
@@ -189,6 +192,7 @@ def extract_and_persist_from_analysis_result(
     try:
         payload = build_decision_signal_payload_from_report(
             result,
+            user_id=user_id,
             context_snapshot=context_snapshot,
             portfolio_context=portfolio_context,
             source_report_id=source_report_id,
@@ -200,7 +204,7 @@ def extract_and_persist_from_analysis_result(
         if payload is None:
             return None
         writer = service or DecisionSignalService()
-        return writer.create_signal(payload)
+        return writer.create_signal(payload, user_id=user_id)
     except Exception as exc:
         logger.warning(
             "Decision signal extraction failed: query_id=%s stock_code=%s error=%s",

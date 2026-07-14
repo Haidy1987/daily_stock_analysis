@@ -333,10 +333,14 @@ class AnalysisHistory(Base):
     stop_loss = Column(Float)
     take_profit = Column(Float)
 
+    # 本地登录用户归属（多用户隔离）；旧数据由迁移回填为 admin
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=True, index=True)
+
     created_at = Column(DateTime, default=datetime.now, index=True)
 
     __table_args__ = (
         Index('ix_analysis_code_time', 'code', 'created_at'),
+        Index('ix_analysis_user_time', 'user_id', 'created_at'),
     )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -358,6 +362,7 @@ class AnalysisHistory(Base):
             'secondary_buy': self.secondary_buy,
             'stop_loss': self.stop_loss,
             'take_profit': self.take_profit,
+            'user_id': self.user_id,
             'created_at': self.created_at.isoformat() if self.created_at else None,
         }
 
@@ -491,7 +496,8 @@ class PortfolioAccount(Base):
     __tablename__ = 'portfolio_accounts'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    owner_id = Column(String(64), index=True)
+    owner_id = Column(String(64), index=True)  # legacy optional label; not auth user_id
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=True, index=True)
     name = Column(String(64), nullable=False)
     broker = Column(String(64))
     market = Column(String(8), nullable=False, default='cn', index=True)  # cn/hk/us
@@ -502,6 +508,7 @@ class PortfolioAccount(Base):
 
     __table_args__ = (
         Index('ix_portfolio_account_owner_active', 'owner_id', 'is_active'),
+        Index('ix_portfolio_account_user_active', 'user_id', 'is_active'),
     )
 
 
@@ -692,6 +699,7 @@ class ConversationMessage(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     session_id = Column(String(100), index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=True, index=True)
     role = Column(String(20), nullable=False)  # user, assistant, system
     content = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.now, index=True)
@@ -704,6 +712,7 @@ class ConversationSummary(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     session_id = Column(String(100), nullable=False, unique=True, index=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=True, index=True)
     summary = Column(Text, nullable=False)
     covered_message_id = Column(Integer, nullable=False, default=0)
     source_message_count = Column(Integer, nullable=False, default=0)
@@ -719,6 +728,7 @@ class AgentProviderTurn(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     session_id = Column(String(100), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=True, index=True)
     run_id = Column(String(64), nullable=False, index=True)
     provider = Column(String(64), nullable=False, index=True)
     model = Column(String(160), nullable=False, index=True)
@@ -747,6 +757,7 @@ class LLMUsage(Base):
     call_type = Column(String(32), nullable=False, index=True)
     model = Column(String(128), nullable=False)
     stock_code = Column(String(16), nullable=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=True, index=True)
     provider = Column(String(64), nullable=True)
     prompt_tokens = Column(Integer, nullable=False, default=0)
     completion_tokens = Column(Integer, nullable=False, default=0)
@@ -899,11 +910,13 @@ class AlertRuleRecord(Base):
     source = Column(String(16), nullable=False, default='api', index=True)
     cooldown_policy = Column(Text)
     notification_policy = Column(Text)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.now, index=True)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, index=True)
 
     __table_args__ = (
         Index('ix_alert_rule_type_target', 'alert_type', 'target'),
+        Index('ix_alert_rule_user_enabled', 'user_id', 'enabled'),
     )
 
 
@@ -1014,12 +1027,14 @@ class DecisionSignalRecord(Base):
     plan_quality = Column(String(16), nullable=False, default='unknown', index=True)
     status = Column(String(16), nullable=False, default='active', index=True)
     expires_at = Column(DateTime, index=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=True, index=True)
     created_at = Column(DateTime, default=utc_naive_now, index=True)
     updated_at = Column(DateTime, default=utc_naive_now, onupdate=utc_naive_now, index=True)
     metadata_json = Column(Text)
 
     __table_args__ = (
         Index('ix_decision_signal_stock_status_time', 'stock_code', 'status', 'created_at'),
+        Index('ix_decision_signal_user_status_time', 'user_id', 'status', 'created_at'),
         Index('ix_decision_signal_market_status_time', 'market', 'status', 'created_at'),
         Index(
             'ix_decision_signal_report_type_market_stock_action_horizon_phase',
@@ -1096,8 +1111,94 @@ class DecisionSignalFeedbackRecord(Base):
     reason_code = Column(String(64), index=True)
     note = Column(Text)
     source = Column(String(16), nullable=False, default='api', index=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=True, index=True)
     created_at = Column(DateTime, default=utc_naive_now, index=True)
     updated_at = Column(DateTime, default=utc_naive_now, onupdate=utc_naive_now, index=True)
+
+
+class UserWatchlistItem(Base):
+    """Per-user watchlist stock codes (Web API); global STOCK_LIST remains for schedule/CLI."""
+
+    __tablename__ = 'user_watchlist_items'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False, index=True)
+    stock_code = Column(String(32), nullable=False, index=True)
+    sort_order = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=utc_naive_now, index=True)
+    updated_at = Column(DateTime, default=utc_naive_now, onupdate=utc_naive_now)
+
+    __table_args__ = (
+        UniqueConstraint('user_id', 'stock_code', name='uix_user_watchlist_user_code'),
+    )
+
+
+class UserRecord(Base):
+    """Local application user (admin / user)."""
+
+    __tablename__ = 'users'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    username = Column(String(64), nullable=False, unique=True, index=True)
+    email = Column(String(255), nullable=True)
+    password_hash = Column(String(512), nullable=False)
+    role = Column(String(16), nullable=False, default='user', index=True)
+    status = Column(String(16), nullable=False, default='active', index=True)
+    created_at = Column(DateTime, default=utc_naive_now, index=True)
+    updated_at = Column(DateTime, default=utc_naive_now, onupdate=utc_naive_now, index=True)
+    last_login_at = Column(DateTime, nullable=True)
+
+
+class UserSessionRecord(Base):
+    """Server-side session; cookie stores opaque token, DB stores token hash."""
+
+    __tablename__ = 'user_sessions'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False, index=True)
+    token_hash = Column(String(128), nullable=False, unique=True, index=True)
+    expires_at = Column(DateTime, nullable=False, index=True)
+    last_seen_at = Column(DateTime, nullable=True)
+    revoked_at = Column(DateTime, nullable=True, index=True)
+    ip_address = Column(String(64), nullable=True)
+    user_agent = Column(String(512), nullable=True)
+    created_at = Column(DateTime, default=utc_naive_now, index=True)
+
+    __table_args__ = (
+        Index('ix_user_sessions_user_expires', 'user_id', 'expires_at'),
+    )
+
+
+class UserPreferenceRecord(Base):
+    """Per-user UI preferences (no system secrets)."""
+
+    __tablename__ = 'user_preferences'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False, unique=True, index=True)
+    language = Column(String(16), nullable=True)
+    theme = Column(String(32), nullable=True)
+    default_market = Column(String(16), nullable=True)
+    default_report_language = Column(String(16), nullable=True)
+    preferences_json = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=utc_naive_now)
+    updated_at = Column(DateTime, default=utc_naive_now, onupdate=utc_naive_now)
+
+
+class AuditLogRecord(Base):
+    """Security audit trail for auth and user-admin actions."""
+
+    __tablename__ = 'audit_logs'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    actor_user_id = Column(Integer, nullable=True, index=True)
+    action = Column(String(64), nullable=False, index=True)
+    target_type = Column(String(64), nullable=True, index=True)
+    target_id = Column(String(64), nullable=True, index=True)
+    ip_address = Column(String(64), nullable=True)
+    user_agent = Column(String(512), nullable=True)
+    detail_json = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=utc_naive_now, index=True)
 
 
 class _DatabaseManagerMeta(type):
@@ -1186,6 +1287,9 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             self._ensure_intelligence_items_unique_index()
 
             self._initialized = True
+            # Must run after _initialized so get_session() works during migration.
+            self._ensure_admin_user_migrated()
+            self._ensure_user_owned_user_id_columns()
             logger.info(f"数据库初始化完成: {db_url}")
 
             # 注册退出钩子，确保程序退出时关闭数据库连接
@@ -1227,6 +1331,113 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             raise
         finally:
             session.close()
+
+    def _ensure_admin_user_migrated(self) -> None:
+        """Migrate legacy .admin_password_hash into users table when empty."""
+        try:
+            from src.auth import migrate_admin_password_file_to_users
+
+            migrate_admin_password_file_to_users(db_manager=self)
+        except Exception as exc:
+            logger.warning("Failed to migrate admin password file into users table: %s", exc)
+
+    def _ensure_user_owned_user_id_columns(self) -> None:
+        """Add nullable user_id columns and backfill to admin for user-owned tables."""
+        if not self._is_sqlite_engine:
+            return
+
+        tables_columns = (
+            ("analysis_history", "user_id"),
+            ("portfolio_accounts", "user_id"),
+            ("alert_rules", "user_id"),
+            ("decision_signals", "user_id"),
+            ("decision_signal_feedback", "user_id"),
+            ("conversation_messages", "user_id"),
+            ("conversation_summaries", "user_id"),
+            ("agent_provider_turns", "user_id"),
+            ("llm_usage", "user_id"),
+        )
+
+        try:
+            inspector = inspect(self._engine)
+            with self._engine.begin() as conn:
+                for table_name, column_name in tables_columns:
+                    if not inspector.has_table(table_name):
+                        continue
+                    existing = {
+                        col["name"] for col in inspector.get_columns(table_name)
+                    }
+                    if column_name not in existing:
+                        conn.execute(
+                            text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} INTEGER")
+                        )
+                        logger.info("Added %s.%s for multi-user isolation", table_name, column_name)
+
+            from src.auth import get_default_admin_user_id
+
+            try:
+                admin_id = get_default_admin_user_id()
+            except RuntimeError:
+                logger.info(
+                    "Skip user_id backfill: admin user not created yet "
+                    "(will run after initial password setup)"
+                )
+                return
+
+            with self._engine.begin() as conn:
+                for table_name, column_name in tables_columns:
+                    if not inspector.has_table(table_name):
+                        continue
+                    conn.execute(
+                        text(
+                            f"UPDATE {table_name} SET {column_name} = :admin_id "
+                            f"WHERE {column_name} IS NULL"
+                        ),
+                        {"admin_id": admin_id},
+                    )
+
+            # Seed admin watchlist from global STOCK_LIST once (idempotent if already filled).
+            self._ensure_admin_watchlist_seeded(admin_id)
+        except Exception as exc:
+            logger.warning("Failed to ensure user_id columns for multi-user isolation: %s", exc)
+
+    def _ensure_admin_watchlist_seeded(self, admin_id: int) -> None:
+        """Copy STOCK_LIST into admin user_watchlist_items when admin has no rows."""
+        try:
+            if not inspect(self._engine).has_table("user_watchlist_items"):
+                return
+            session = self._SessionLocal()
+            try:
+                existing = session.execute(
+                    select(func.count())
+                    .select_from(UserWatchlistItem)
+                    .where(UserWatchlistItem.user_id == admin_id)
+                ).scalar_one()
+                if int(existing or 0) > 0:
+                    return
+                from src.config import get_config
+
+                codes = [str(c).strip() for c in (get_config().stock_list or []) if str(c).strip()]
+                if not codes:
+                    return
+                for idx, code in enumerate(codes):
+                    session.add(
+                        UserWatchlistItem(
+                            user_id=admin_id,
+                            stock_code=code,
+                            sort_order=idx,
+                        )
+                    )
+                session.commit()
+                logger.info(
+                    "Seeded %s watchlist codes for admin user_id=%s from STOCK_LIST",
+                    len(codes),
+                    admin_id,
+                )
+            finally:
+                session.close()
+        except Exception as exc:
+            logger.warning("Failed to seed admin watchlist from STOCK_LIST: %s", exc)
 
     def _ensure_intelligence_items_unique_index(self) -> None:
         if not self._is_sqlite_engine:
@@ -1894,7 +2105,8 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
         report_type: str,
         news_content: Optional[str],
         context_snapshot: Optional[Dict[str, Any]] = None,
-        save_snapshot: bool = True
+        save_snapshot: bool = True,
+        user_id: Optional[int] = None,
     ) -> int:
         """
         保存分析结果历史记录。
@@ -1904,6 +2116,11 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
         """
         if result is None:
             return 0
+
+        if user_id is None:
+            from src.auth import get_default_admin_user_id
+
+            user_id = get_default_admin_user_id(create_if_missing=True)
 
         sniper_points = self._extract_sniper_points(result)
         raw_result = self._build_raw_result(result)
@@ -1929,6 +2146,7 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                     secondary_buy=sniper_points.get("secondary_buy"),
                     stop_loss=sniper_points.get("stop_loss"),
                     take_profit=sniper_points.get("take_profit"),
+                    user_id=user_id,
                     created_at=datetime.now(),
                 )
                 session.add(history)
@@ -2028,6 +2246,7 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
         days: int = 30,
         limit: int = 50,
         exclude_query_id: Optional[str] = None,
+        user_id: Optional[int] = None,
     ) -> List[AnalysisHistory]:
         """
         Query analysis history records.
@@ -2053,6 +2272,9 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             # exclude_query_id only applies when not doing exact lookup (query_id is None)
             if exclude_query_id and not query_id:
                 conditions.append(AnalysisHistory.query_id != exclude_query_id)
+
+            if user_id is not None:
+                conditions.append(AnalysisHistory.user_id == user_id)
 
             results = session.execute(
                 select(AnalysisHistory)
@@ -2098,7 +2320,8 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
         start_date: Optional[date] = None,
         end_date: Optional[date] = None,
         offset: int = 0,
-        limit: int = 20
+        limit: int = 20,
+        user_id: Optional[int] = None,
     ) -> Tuple[List[AnalysisHistory], int]:
         """
         分页查询分析历史记录（带总数）
@@ -2134,6 +2357,9 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             if end_date:
                 # created_at < end_date+1 00:00:00 (即 <= end_date 23:59:59)
                 conditions.append(AnalysisHistory.created_at < datetime.combine(end_date + timedelta(days=1), datetime.min.time()))
+
+            if user_id is not None:
+                conditions.append(AnalysisHistory.user_id == user_id)
             
             # 构建 where 子句
             where_clause = and_(*conditions) if conditions else True
@@ -2154,7 +2380,11 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             
             return list(results), total
     
-    def get_analysis_history_by_id(self, record_id: int) -> Optional[AnalysisHistory]:
+    def get_analysis_history_by_id(
+        self,
+        record_id: int,
+        user_id: Optional[int] = None,
+    ) -> Optional[AnalysisHistory]:
         """
         根据数据库主键 ID 查询单条分析历史记录
         
@@ -2168,12 +2398,19 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             AnalysisHistory 对象，不存在返回 None
         """
         with self.get_session() as session:
+            conditions = [AnalysisHistory.id == record_id]
+            if user_id is not None:
+                conditions.append(AnalysisHistory.user_id == user_id)
             result = session.execute(
-                select(AnalysisHistory).where(AnalysisHistory.id == record_id)
+                select(AnalysisHistory).where(and_(*conditions))
             ).scalars().first()
             return result
 
-    def delete_analysis_history_records(self, record_ids: List[int]) -> int:
+    def delete_analysis_history_records(
+        self,
+        record_ids: List[int],
+        user_id: Optional[int] = None,
+    ) -> int:
         """
         删除指定的分析历史记录。
 
@@ -2192,9 +2429,12 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             return 0
 
         with self.session_scope() as session:
+            delete_conditions = [AnalysisHistory.id.in_(ids)]
+            if user_id is not None:
+                delete_conditions.append(AnalysisHistory.user_id == user_id)
             existing_ids = sorted(
                 session.execute(
-                    select(AnalysisHistory.id).where(AnalysisHistory.id.in_(ids))
+                    select(AnalysisHistory.id).where(and_(*delete_conditions))
                 ).scalars().all()
             )
             if not existing_ids:
@@ -2238,6 +2478,7 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
         end_date: Optional[date] = None,
         limit: int = 200,
         include_market_review: bool = False,
+        user_id: Optional[int] = None,
     ) -> List[AnalysisHistory]:
         """
         获取历史记录中的不重复股票列表，每只股票取最新一条记录。
@@ -2279,6 +2520,8 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                         ),
                     )
                 )
+            if user_id is not None:
+                subq = subq.where(AnalysisHistory.user_id == user_id)
             subq = subq.group_by(AnalysisHistory.code).subquery()
 
             results = (
@@ -2301,6 +2544,7 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
         *,
         code: Optional[str] = None,
         report_type: Optional[str] = None,
+        user_id: Optional[int] = None,
     ) -> Optional[AnalysisHistory]:
         """
         根据 query_id 查询最新一条分析历史记录
@@ -2321,6 +2565,8 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                 conditions.append(AnalysisHistory.code == code)
             if report_type:
                 conditions.append(AnalysisHistory.report_type == report_type)
+            if user_id is not None:
+                conditions.append(AnalysisHistory.user_id == user_id)
 
             result = session.execute(
                 select(AnalysisHistory)
@@ -2683,15 +2929,28 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
         digest = hashlib.md5(raw_key.encode("utf-8")).hexdigest()
         return f"no-url:{code}:{digest}"
 
-    def save_conversation_message(self, session_id: str, role: str, content: str) -> int:
+    def save_conversation_message(
+        self,
+        session_id: str,
+        role: str,
+        content: str,
+        *,
+        user_id: Optional[int] = None,
+    ) -> int:
         """
         保存 Agent 对话消息
         """
         with self.session_scope() as session:
+            resolved_user_id = user_id
+            if resolved_user_id is None and session_id.startswith("web:"):
+                parts = session_id.split(":", 2)
+                if len(parts) >= 2 and str(parts[1]).isdigit():
+                    resolved_user_id = int(parts[1])
             msg = ConversationMessage(
                 session_id=session_id,
                 role=role,
-                content=content
+                content=content,
+                user_id=resolved_user_id,
             )
             session.add(msg)
             session.flush()

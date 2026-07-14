@@ -6,8 +6,10 @@ from __future__ import annotations
 import logging
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, Query, Security
+from fastapi import APIRouter, HTTPException, Query, Request, Security
 from fastapi.security import APIKeyCookie
+
+from api.deps import resolve_effective_user_id
 
 from api.v1.schemas.common import ErrorResponse
 from api.v1.schemas.decision_signals import (
@@ -106,11 +108,12 @@ def _internal_error(message: str, exc: Exception) -> HTTPException:
     ),
     operation_id="createDecisionSignal",
 )
-def create_signal(request: DecisionSignalCreateRequest) -> DecisionSignalMutationResponse:
+def create_signal(request: DecisionSignalCreateRequest, http_request: Request) -> DecisionSignalMutationResponse:
+    user_id = resolve_effective_user_id(http_request)
     service = DecisionSignalService()
     try:
         payload = request.model_dump(exclude_unset=True)
-        return DecisionSignalMutationResponse(**service.create_signal(payload))
+        return DecisionSignalMutationResponse(**service.create_signal(payload, user_id=user_id))
     except DecisionSignalStorageError as exc:
         raise _internal_error("Create decision signal failed", exc)
     except ValueError as exc:
@@ -139,6 +142,7 @@ def create_signal(request: DecisionSignalCreateRequest) -> DecisionSignalMutatio
     operation_id="listDecisionSignals",
 )
 def list_signals(
+    http_request: Request,
     market: Optional[str] = Query(None, description="Optional market filter: cn/hk/us/jp/kr/tw"),
     stock_code: Optional[str] = Query(None, description="Optional stock code filter"),
     action: Optional[str] = Query(None, description="Optional decision action filter"),
@@ -160,10 +164,12 @@ def list_signals(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ) -> DecisionSignalListResponse:
+    user_id = resolve_effective_user_id(http_request)
     service = DecisionSignalService()
     try:
         return DecisionSignalListResponse(
             **service.list_signals(
+                user_id=user_id,
                 market=market,
                 stock_code=stock_code,
                 action=action,
@@ -371,13 +377,16 @@ def reassess_signal(request: DecisionSignalReassessRequest) -> DecisionSignalRea
 )
 def get_latest_active(
     stock_code: str,
+    http_request: Request,
     market: Optional[str] = Query(None, description="Optional market filter: cn/hk/us/jp/kr/tw"),
     limit: int = Query(1, ge=1, le=100),
 ) -> DecisionSignalListResponse:
+    user_id = resolve_effective_user_id(http_request)
     service = DecisionSignalService()
     try:
         return DecisionSignalListResponse(
             **service.get_latest_active(
+                user_id=user_id,
                 stock_code=stock_code,
                 market=market,
                 limit=limit,
@@ -404,10 +413,11 @@ def get_latest_active(
     description="按 ID 查询单条 DecisionSignal；读取前会执行懒过期。",
     operation_id="getDecisionSignal",
 )
-def get_signal(signal_id: int) -> DecisionSignalItem:
+def get_signal(signal_id: int, http_request: Request) -> DecisionSignalItem:
+    user_id = resolve_effective_user_id(http_request)
     service = DecisionSignalService()
     try:
-        return DecisionSignalItem(**service.get_signal(signal_id))
+        return DecisionSignalItem(**service.get_signal(signal_id, user_id=user_id))
     except DecisionSignalNotFoundError as exc:
         raise _not_found(exc)
     except DecisionSignalStorageError as exc:
@@ -513,12 +523,14 @@ def put_feedback(signal_id: int, request: DecisionSignalFeedbackRequest) -> Deci
     ),
     operation_id="updateDecisionSignalStatus",
 )
-def update_status(signal_id: int, request: DecisionSignalStatusUpdateRequest) -> DecisionSignalItem:
+def update_status(signal_id: int, request: DecisionSignalStatusUpdateRequest, http_request: Request) -> DecisionSignalItem:
+    user_id = resolve_effective_user_id(http_request)
     service = DecisionSignalService()
     try:
         return DecisionSignalItem(
             **service.update_status(
                 signal_id,
+                user_id=user_id,
                 status=request.status,
                 metadata=request.metadata,
                 replace_metadata="metadata" in request.model_fields_set,

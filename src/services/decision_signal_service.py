@@ -79,8 +79,8 @@ class DecisionSignalService:
         self.portfolio_repo = portfolio_repo or PortfolioRepository(db_manager)
         self.db = db_manager or getattr(self.repo, "db", None) or DatabaseManager.get_instance()
 
-    def create_signal(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        fields, lifecycle = self._normalize_payload(payload)
+    def create_signal(self, payload: Dict[str, Any], *, user_id: int) -> Dict[str, Any]:
+        fields, lifecycle = self._normalize_payload(payload, user_id=user_id)
         result = self.repo.create_if_absent(
             fields,
             allow_relaxed_horizon_fill=lifecycle["horizon_defaulted"],
@@ -93,8 +93,8 @@ class DecisionSignalService:
             )
         return {"item": self._serialize(result.row), "created": result.created}
 
-    def get_signal(self, signal_id: int) -> Dict[str, Any]:
-        row = self.repo.get(signal_id)
+    def get_signal(self, signal_id: int, *, user_id: int) -> Dict[str, Any]:
+        row = self.repo.get(signal_id, user_id=user_id)
         if row is None:
             raise DecisionSignalNotFoundError(f"Decision signal not found: {signal_id}")
         return self._serialize(row)
@@ -102,6 +102,7 @@ class DecisionSignalService:
     def list_signals(
         self,
         *,
+        user_id: int,
         stock_code: Optional[str] = None,
         market: Optional[str] = None,
         action: Optional[str] = None,
@@ -157,7 +158,7 @@ class DecisionSignalService:
             if not stock_identity_filters:
                 return {"items": [], "total": 0, "page": safe_page, "page_size": safe_page_size}
         elif holding_only:
-            held_identities = self._cached_holding_identities(account_id=account_id)
+            held_identities = self._cached_holding_identities(user_id=user_id, account_id=account_id)
             if market_norm:
                 held_identities = {
                     identity for identity in held_identities if identity[0] == market_norm
@@ -173,6 +174,7 @@ class DecisionSignalService:
                 return {"items": [], "total": 0, "page": safe_page, "page_size": safe_page_size}
 
         rows, total = self.repo.list(
+            user_id=user_id,
             stock_codes=stock_codes,
             stock_identities=stock_identity_filters,
             market=market_norm,
@@ -207,7 +209,7 @@ class DecisionSignalService:
             stock_identities=stock_identity_filters,
             holding_only=holding_only,
         ):
-            self._backfill_analysis_signal_from_history(source_report_id_norm)
+            self._backfill_analysis_signal_from_history(source_report_id_norm, user_id=user_id)
             rows, total = self.repo.list(
                 stock_codes=stock_codes,
                 stock_identities=stock_identity_filters,
@@ -236,12 +238,14 @@ class DecisionSignalService:
     def get_latest_active(
         self,
         *,
+        user_id: int,
         stock_code: str,
         market: Optional[str] = None,
         limit: int = 1,
     ) -> Dict[str, Any]:
         market_norm = self._normalize_optional_market(market)
         rows = self.repo.get_latest_active(
+            user_id=user_id,
             stock_codes=self._stock_filter_codes(stock_code, market=market_norm) or [
                 self._normalize_stock_code(stock_code)
             ],
@@ -259,13 +263,14 @@ class DecisionSignalService:
         self,
         signal_id: int,
         *,
+        user_id: int,
         status: str,
         metadata: Optional[Any] = None,
         replace_metadata: bool = False,
     ) -> Dict[str, Any]:
         status_norm = self._normalize_enum(status, SIGNAL_STATUSES, "status")
         metadata_json = self._json_dumps(metadata) if replace_metadata else None
-        existing = self.repo.get(signal_id)
+        existing = self.repo.get(signal_id, user_id=user_id)
         if existing is None:
             raise DecisionSignalNotFoundError(f"Decision signal not found: {signal_id}")
         if status_norm == "active" and (
@@ -274,6 +279,7 @@ class DecisionSignalService:
             raise ValueError("terminal decision signal cannot be reactivated through status update")
         row = self.repo.update_status(
             signal_id,
+            user_id=user_id,
             status=status_norm,
             metadata_json=metadata_json,
             replace_metadata=replace_metadata,
@@ -324,7 +330,7 @@ class DecisionSignalService:
             )
         )
 
-    def _backfill_analysis_signal_from_history(self, source_report_id: int) -> None:
+    def _backfill_analysis_signal_from_history(self, source_report_id: int, *, user_id: int) -> None:
         """Best-effort lazy extraction for reports saved before DecisionSignal existed."""
 
         try:
@@ -379,6 +385,7 @@ class DecisionSignalService:
             )
             payload = build_decision_signal_payload_from_report(
                 result,
+                user_id=user_id,
                 context_snapshot=context_snapshot,
                 source_report_id=source_report_id,
                 trace_id=str(getattr(record, "query_id", "") or source_report_id),
@@ -392,10 +399,10 @@ class DecisionSignalService:
                 payload,
                 created_at=getattr(record, "created_at", None),
             )
-            created = self.create_signal(payload)
+            created = self.create_signal(payload, user_id=user_id)
             signal_id = created.get("item", {}).get("id")
             if isinstance(signal_id, int):
-                self._invalidate_history_backfill_if_superseded(signal_id)
+                self._invalidate_history_backfill_if_superseded(signal_id, user_id=user_id)
         except Exception as exc:
             logger.warning(
                 "Decision signal lazy backfill failed: source_report_id=%s error=%s",
@@ -559,8 +566,8 @@ class DecisionSignalService:
         except (OverflowError, OSError):
             return to_utc_naive_datetime(value)
 
-    def _invalidate_history_backfill_if_superseded(self, signal_id: int) -> None:
-        row = self.repo.get(signal_id)
+    def _invalidate_history_backfill_if_superseded(self, signal_id: int, *, user_id: int) -> None:
+        row = self.repo.get(signal_id, user_id=user_id)
         if row is None or row.status != "active":
             return
 
@@ -568,6 +575,7 @@ class DecisionSignalService:
         if not opposing_actions:
             return
         newer_rows = self.repo.list_active_by_stock_actions(
+            user_id=user_id,
             market=row.market,
             stock_code=row.stock_code,
             actions=sorted(opposing_actions),
@@ -579,6 +587,7 @@ class DecisionSignalService:
             metadata_json = self._invalidation_metadata_json(row, invalidated_by=newer_row)
             updated = self.repo.update_status(
                 row.id,
+                user_id=user_id,
                 status="invalidated",
                 metadata_json=metadata_json,
                 replace_metadata=True,
@@ -630,7 +639,7 @@ class DecisionSignalService:
             return None
         return parsed if math.isfinite(parsed) else None
 
-    def _normalize_payload(self, payload: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    def _normalize_payload(self, payload: Dict[str, Any], *, user_id: int) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         market = self._normalize_market(payload.get("market"))
         stock_code = self._normalize_stock_code(payload.get("stock_code"), market=market)
         action = self._normalize_action(payload.get("action"))
@@ -664,6 +673,7 @@ class DecisionSignalService:
         created_at = self._parse_datetime(payload.get("_created_at_override"))
 
         fields: Dict[str, Any] = {
+            "user_id": user_id,
             "stock_code": stock_code,
             "stock_name": self._optional_public_text(payload.get("stock_name"), "stock_name", max_length=64),
             "market": market,
@@ -789,6 +799,7 @@ class DecisionSignalService:
         if not opposing_actions:
             return
         old_rows = self.repo.list_active_by_stock_actions(
+            user_id=int(row.user_id or 0),
             market=row.market,
             stock_code=row.stock_code,
             actions=sorted(opposing_actions),
@@ -800,6 +811,7 @@ class DecisionSignalService:
             metadata_json = self._invalidation_metadata_json(old_row, invalidated_by=row)
             updated = self.repo.update_status(
                 old_row.id,
+                user_id=int(row.user_id or 0),
                 status="invalidated",
                 metadata_json=metadata_json,
                 replace_metadata=True,
@@ -887,8 +899,11 @@ class DecisionSignalService:
             return "partial"
         return "minimal"
 
-    def _cached_holding_identities(self, *, account_id: Optional[int]) -> set[Tuple[str, str]]:
-        identities = self.portfolio_repo.list_cached_position_identities(account_id=account_id)
+    def _cached_holding_identities(self, *, user_id: int, account_id: Optional[int]) -> set[Tuple[str, str]]:
+        identities = self.portfolio_repo.list_cached_position_identities(
+            user_id=user_id,
+            account_id=account_id,
+        )
         normalized: set[Tuple[str, str]] = set()
         for market, symbol in identities:
             if not str(symbol or "").strip():

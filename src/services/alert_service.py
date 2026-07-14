@@ -107,18 +107,19 @@ class AlertService:
         self.db = db_manager or DatabaseManager.get_instance()
         self.repo = AlertRepository(self.db)
 
-    def create_rule(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        fields = self._normalize_rule_payload(payload)
+    def create_rule(self, payload: Dict[str, Any], *, user_id: int) -> Dict[str, Any]:
+        fields = self._normalize_rule_payload(payload, user_id=user_id)
+        fields["user_id"] = user_id
         return self._serialize_rule(self.repo.create_rule(fields))
 
-    def get_rule(self, rule_id: int) -> Dict[str, Any]:
-        row = self.repo.get_rule(rule_id)
+    def get_rule(self, rule_id: int, *, user_id: int) -> Dict[str, Any]:
+        row = self.repo.get_rule(rule_id, user_id=user_id)
         if row is None:
             raise AlertNotFoundError(f"Alert rule not found: {rule_id}")
         return self._serialize_rule(row)
 
-    def update_rule(self, rule_id: int, payload: Dict[str, Any]) -> Dict[str, Any]:
-        row = self.repo.get_rule(rule_id)
+    def update_rule(self, rule_id: int, payload: Dict[str, Any], *, user_id: int) -> Dict[str, Any]:
+        row = self.repo.get_rule(rule_id, user_id=user_id)
         if row is None:
             raise AlertNotFoundError(f"Alert rule not found: {rule_id}")
         if not payload:
@@ -127,17 +128,18 @@ class AlertService:
 
         merged = self._serialize_rule_base(row)
         merged.update(payload)
-        fields = self._normalize_rule_payload(merged, source=merged.get("source") or "api")
-        updated = self.repo.update_rule(rule_id, fields)
+        fields = self._normalize_rule_payload(merged, source=merged.get("source") or "api", user_id=user_id)
+        fields["user_id"] = user_id
+        updated = self.repo.update_rule(rule_id, user_id=user_id, fields=fields)
         if updated is None:
             raise AlertNotFoundError(f"Alert rule not found: {rule_id}")
         return self._serialize_rule(updated)
 
-    def delete_rule(self, rule_id: int) -> bool:
-        return self.repo.delete_rule(rule_id)
+    def delete_rule(self, rule_id: int, *, user_id: int) -> bool:
+        return self.repo.delete_rule(rule_id, user_id=user_id)
 
-    def enable_rule(self, rule_id: int, enabled: bool) -> Dict[str, Any]:
-        updated = self.repo.update_rule(rule_id, {"enabled": enabled})
+    def enable_rule(self, rule_id: int, enabled: bool, *, user_id: int) -> Dict[str, Any]:
+        updated = self.repo.update_rule(rule_id, user_id=user_id, fields={"enabled": enabled})
         if updated is None:
             raise AlertNotFoundError(f"Alert rule not found: {rule_id}")
         return self._serialize_rule(updated)
@@ -145,6 +147,7 @@ class AlertService:
     def list_rules(
         self,
         *,
+        user_id: int,
         enabled: Optional[bool] = None,
         alert_type: Optional[str] = None,
         target_scope: Optional[str] = None,
@@ -154,6 +157,7 @@ class AlertService:
         page_size: int = 20,
     ) -> Dict[str, Any]:
         rows, total = self.repo.list_rules(
+            user_id=user_id,
             enabled=enabled,
             alert_type=alert_type,
             target_scope=target_scope,
@@ -169,8 +173,8 @@ class AlertService:
             "page_size": page_size,
         }
 
-    def test_rule(self, rule_id: int) -> Dict[str, Any]:
-        row = self.repo.get_rule(rule_id)
+    def test_rule(self, rule_id: int, *, user_id: int) -> Dict[str, Any]:
+        row = self.repo.get_rule(rule_id, user_id=user_id)
         if row is None:
             raise AlertNotFoundError(f"Alert rule not found: {rule_id}")
 
@@ -867,7 +871,13 @@ class AlertService:
             "page_size": page_size,
         }
 
-    def _normalize_rule_payload(self, payload: Dict[str, Any], *, source: str = "api") -> Dict[str, Any]:
+    def _normalize_rule_payload(
+        self,
+        payload: Dict[str, Any],
+        *,
+        source: str = "api",
+        user_id: int,
+    ) -> Dict[str, Any]:
         target_scope = str(payload.get("target_scope") or "single_symbol").strip()
         if target_scope not in SUPPORTED_TARGET_SCOPES:
             raise AlertServiceError(f"unsupported target_scope: {target_scope}")
@@ -886,7 +896,7 @@ class AlertService:
             raise AlertServiceError(f"unsupported severity: {severity}")
 
         parameters = self._normalize_parameters(alert_type, payload.get("parameters") or {})
-        target = self._normalize_target(target_scope, target)
+        target = self._normalize_target(target_scope, target, user_id=user_id)
         if target_scope == "single_symbol" and alert_type in LEGACY_RUNTIME_ALERT_TYPES:
             serialized_rule = {"stock_code": target, "alert_type": alert_type, **parameters}
             try:
@@ -933,7 +943,7 @@ class AlertService:
         if target_scope in {"single_symbol", "watchlist", "portfolio_holdings"} and alert_type not in SYMBOL_ALERT_TYPES:
             raise UnsupportedAlertTypeError(f"unsupported alert_type for {target_scope}: {alert_type}")
 
-    def _normalize_target(self, target_scope: str, target: str) -> str:
+    def _normalize_target(self, target_scope: str, target: str, *, user_id: int) -> str:
         if target_scope == "single_symbol":
             return target.strip()
         if target_scope == "market":
@@ -944,7 +954,7 @@ class AlertService:
         try:
             normalized = normalize_batch_target_scope_target(target_scope, target)
             if target_scope in {"portfolio_holdings", "portfolio_account"}:
-                ensure_active_portfolio_account(normalized)
+                ensure_active_portfolio_account(normalized, user_id=user_id)
             return normalized
         except ValueError as exc:
             raise AlertServiceError(str(exc)) from exc
@@ -1009,6 +1019,7 @@ class AlertService:
         include_overflow_payload: bool = True,
     ) -> List[RuntimeAlertPayload]:
         data = self._serialize_rule_base(row)
+        rule_user_id = int(getattr(row, "user_id", 0) or data.get("user_id") or 0)
         parent_key = self._semantic_key(
             data["target_scope"],
             data["target"],
@@ -1029,6 +1040,7 @@ class AlertService:
                 config = get_config()
             try:
                 targets, overflow_count = expand_symbol_targets(
+                    user_id=rule_user_id,
                     target_scope=data["target_scope"],
                     target=data["target"],
                     config=config,
@@ -1109,6 +1121,7 @@ class AlertService:
         parameters = data["parameters"]
         metadata = {
             "persisted_rule_id": data["id"],
+            "rule_user_id": data.get("user_id"),
             "target_scope": data.get("target_scope"),
             "parent_target": row.target,
             "effective_target": data.get("target"),
@@ -1160,6 +1173,7 @@ class AlertService:
     def _serialize_rule_base(self, row: AlertRuleRecord) -> Dict[str, Any]:
         return {
             "id": row.id,
+            "user_id": row.user_id,
             "name": row.name,
             "target_scope": row.target_scope,
             "target": row.target,

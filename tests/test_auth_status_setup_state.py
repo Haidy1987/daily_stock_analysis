@@ -58,12 +58,29 @@ class AuthStatusSetupStateTestCase(unittest.TestCase):
 
         self.env_path = self.data_dir / ".env"
         self.env_path.write_text("ADMIN_AUTH_ENABLED=false\n", encoding="utf-8")
-        self._env_patcher = patch.dict(os.environ, {"ENV_FILE": str(self.env_path)})
+        self._env_patcher = patch.dict(
+            os.environ,
+            {
+                "ENV_FILE": str(self.env_path),
+                "DATABASE_PATH": str(self.data_dir / "test.db"),
+            },
+        )
         self._env_patcher.start()
 
+        from src.config import Config
+        from src.storage import DatabaseManager
+
+        Config.reset_instance()
+        DatabaseManager.reset_instance()
+
     def tearDown(self) -> None:
+        from src.config import Config
+        from src.storage import DatabaseManager
+
         self._env_patcher.stop()
         self._data_dir_patcher.stop()
+        DatabaseManager.reset_instance()
+        Config.reset_instance()
         _reset_auth_globals()
         self.temp_dir.cleanup()
 

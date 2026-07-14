@@ -14,6 +14,7 @@ const completionBadgeState = { value: true };
 vi.mock('../../../contexts/AuthContext', () => ({
   useAuth: () => ({
     authEnabled: true,
+    currentUser: { id: 1, username: 'admin', role: 'admin', status: 'active' },
     logout: mockLogout,
   }),
 }));
@@ -71,7 +72,22 @@ describe('SidebarNav', () => {
 
     await screen.findByRole('link', { name: '选股' });
     const hrefs = screen.getAllByRole('link').map((link) => link.getAttribute('href'));
-    expect(hrefs.slice(0, 5)).toEqual(['/', '/chat', '/screening', '/portfolio', '/decision-signals']);
+    expect(hrefs.slice(0, 6)).toEqual(['/', '/chat', '/screening', '/technical-chart', '/portfolio', '/decision-signals']);
+  });
+
+  it('shows technical chart navigation after screening and before portfolio when AlphaSift is disabled', async () => {
+    mockGetAlphaSiftStatus.mockResolvedValueOnce({ enabled: false, available: false, installSpecIsDefault: false });
+
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <SidebarNav />
+      </MemoryRouter>,
+    );
+
+    const chartLink = await screen.findByRole('link', { name: '技术图表' });
+    expect(chartLink).toHaveAttribute('href', '/technical-chart');
+    const hrefs = screen.getAllByRole('link').map((link) => link.getAttribute('href'));
+    expect(hrefs.slice(0, 4)).toEqual(['/', '/chat', '/technical-chart', '/portfolio']);
   });
 
   it('refreshes the screening navigation item after any config save event', async () => {
@@ -149,6 +165,18 @@ describe('SidebarNav', () => {
     const signalsLink = screen.getByRole('link', { name: 'AI 建议' });
     expect(signalsLink).toHaveAttribute('href', '/decision-signals');
     expect(signalsLink).toHaveClass('font-medium');
+  });
+
+  it('renders the technical chart navigation item and marks it active', () => {
+    render(
+      <MemoryRouter initialEntries={['/technical-chart']}>
+        <SidebarNav />
+      </MemoryRouter>,
+    );
+
+    const chartLink = screen.getByRole('link', { name: '技术图表' });
+    expect(chartLink).toHaveAttribute('href', '/technical-chart');
+    expect(chartLink).toHaveClass('font-medium');
   });
 
   it('opens the logout confirmation and confirms logout', async () => {

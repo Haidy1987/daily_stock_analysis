@@ -1,7 +1,7 @@
 import type React from 'react';
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { createParsedApiError, getParsedApiError, type ParsedApiError } from '../api/error';
-import { authApi } from '../api/auth';
+import { authApi, type AuthUser } from '../api/auth';
 import { useStockPoolStore } from '../stores';
 
 type AuthContextValue = {
@@ -10,15 +10,21 @@ type AuthContextValue = {
   passwordSet: boolean;
   passwordChangeable: boolean;
   setupState: 'enabled' | 'password_retained' | 'no_password';
+  currentUser: AuthUser | null;
   isLoading: boolean;
   loadError: ParsedApiError | null;
-  login: (password: string, passwordConfirm?: string) => Promise<{ success: boolean; error?: ParsedApiError }>;
+  login: (
+    password: string,
+    passwordConfirm?: string,
+    username?: string
+  ) => Promise<{ success: boolean; error?: ParsedApiError }>;
   changePassword: (
     currentPassword: string,
     newPassword: string,
     newPasswordConfirm: string
   ) => Promise<{ success: boolean; error?: ParsedApiError }>;
   logout: () => Promise<void>;
+  logoutAll: () => Promise<void>;
   refreshStatus: () => Promise<void>;
 };
 
@@ -44,6 +50,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [passwordSet, setPasswordSet] = useState(false);
   const [passwordChangeable, setPasswordChangeable] = useState(false);
   const [setupState, setSetupState] = useState<'enabled' | 'password_retained' | 'no_password'>('no_password');
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<ParsedApiError | null>(null);
 
@@ -57,6 +64,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setPasswordSet(status.passwordSet ?? false);
       setPasswordChangeable(status.passwordChangeable ?? false);
       setSetupState(status.setupState);
+      let nextUser = status.currentUser ?? null;
+      if (status.authEnabled && status.loggedIn && !nextUser) {
+        try {
+          nextUser = await authApi.getMe();
+        } catch {
+          nextUser = null;
+        }
+      }
+      setCurrentUser(status.loggedIn ? nextUser : null);
       if (status.authEnabled && !status.loggedIn) {
         useStockPoolStore.getState().resetDashboardState();
       }
@@ -67,6 +83,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setPasswordSet(false);
       setPasswordChangeable(false);
       setSetupState('no_password');
+      setCurrentUser(null);
       useStockPoolStore.getState().resetDashboardState();
     } finally {
       setIsLoading(false);
@@ -80,10 +97,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = useCallback(
     async (
       password: string,
-      passwordConfirm?: string
+      passwordConfirm?: string,
+      username?: string
     ): Promise<{ success: boolean; error?: ParsedApiError }> => {
       try {
-        await authApi.login(password, passwordConfirm);
+        await authApi.login(password, passwordConfirm, username);
         await fetchStatus();
         return { success: true };
       } catch (err: unknown) {
@@ -116,12 +134,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (err) {
       logoutError = err;
     } finally {
+      setCurrentUser(null);
       await fetchStatus();
     }
 
     if (logoutError && getParsedApiError(logoutError).status !== 401) {
       throw logoutError;
     }
+  }, [fetchStatus]);
+
+  const logoutAll = useCallback(async () => {
+    await authApi.logoutAll();
+    setCurrentUser(null);
+    await fetchStatus();
   }, [fetchStatus]);
 
   return (
@@ -132,11 +157,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         passwordSet,
         passwordChangeable,
         setupState,
+        currentUser,
         isLoading,
         loadError,
         login,
         changePassword,
         logout,
+        logoutAll,
         refreshStatus: fetchStatus,
       }}
     >

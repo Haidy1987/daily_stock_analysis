@@ -39,6 +39,7 @@ class PortfolioRiskService:
     def get_risk_report(
         self,
         *,
+        user_id: int,
         account_id: Optional[int] = None,
         as_of: Optional[date] = None,
         cost_method: str = "fifo",
@@ -46,6 +47,7 @@ class PortfolioRiskService:
     ) -> Dict[str, Any]:
         as_of_date = as_of or date.today()
         snapshot = self.portfolio_service.get_portfolio_snapshot(
+            user_id=user_id,
             account_id=account_id,
             as_of=as_of_date,
             cost_method=cost_method,
@@ -71,6 +73,7 @@ class PortfolioRiskService:
             as_of_date=as_of_date,
         )
         self._ensure_drawdown_snapshot_window(
+            user_id=user_id,
             account_id=account_id,
             as_of_date=as_of_date,
             cost_method=cost_method,
@@ -78,6 +81,7 @@ class PortfolioRiskService:
             include_realtime=include_realtime,
         )
         drawdown = self._build_drawdown(
+            user_id=user_id,
             account_id=account_id,
             as_of_date=as_of_date,
             cost_method=cost_method,
@@ -85,7 +89,7 @@ class PortfolioRiskService:
             lookback_days=thresholds["lookback_days"],
         )
         stop_loss = self._build_stop_loss(snapshot, thresholds)
-        decision_signal_risk = self._build_decision_signal_risk(snapshot)
+        decision_signal_risk = self._build_decision_signal_risk(snapshot, user_id=user_id)
 
         return {
             "as_of": as_of_date.isoformat(),
@@ -103,6 +107,8 @@ class PortfolioRiskService:
     def _build_decision_signal_risk(
         self,
         snapshot: Dict[str, Any],
+        *,
+        user_id: int,
     ) -> Dict[str, Any]:
         try:
             held_positions = self._held_position_identities(snapshot)
@@ -118,6 +124,7 @@ class PortfolioRiskService:
             page = 1
             while True:
                 response = self.decision_signal_service.list_signals(
+                    user_id=user_id,
                     stock_identities=stock_identities,
                     status="active",
                     page=page,
@@ -203,6 +210,7 @@ class PortfolioRiskService:
     def _ensure_drawdown_snapshot_window(
         self,
         *,
+        user_id: int,
         account_id: Optional[int],
         as_of_date: date,
         cost_method: str,
@@ -213,6 +221,7 @@ class PortfolioRiskService:
             return
 
         start_date = self._resolve_backfill_start_date(
+            user_id=user_id,
             account_id=account_id,
             as_of_date=as_of_date,
             lookback_days=lookback_days,
@@ -221,6 +230,7 @@ class PortfolioRiskService:
             return
 
         existing_rows = self.repo.list_daily_snapshots_for_risk(
+            user_id=user_id,
             as_of=as_of_date,
             cost_method=cost_method,
             account_id=account_id,
@@ -232,6 +242,7 @@ class PortfolioRiskService:
             while current_date <= as_of_date:
                 if current_date not in existing_dates:
                     self.portfolio_service.get_portfolio_snapshot(
+                        user_id=user_id,
                         account_id=account_id,
                         as_of=current_date,
                         cost_method=cost_method,
@@ -241,7 +252,10 @@ class PortfolioRiskService:
                 current_date += timedelta(days=1)
             return
 
-        account_ids = [int(account.id) for account in self.repo.list_accounts(include_inactive=False)]
+        account_ids = [
+            int(account.id)
+            for account in self.repo.list_accounts(user_id=user_id, include_inactive=False)
+        ]
         if not account_ids:
             return
         existing_pairs = {(int(row.account_id), row.snapshot_date) for row in existing_rows}
@@ -249,6 +263,7 @@ class PortfolioRiskService:
         while current_date <= as_of_date:
             if not all((aid, current_date) in existing_pairs for aid in account_ids):
                 self.portfolio_service.get_portfolio_snapshot(
+                    user_id=user_id,
                     account_id=None,
                     as_of=current_date,
                     cost_method=cost_method,
@@ -261,6 +276,7 @@ class PortfolioRiskService:
     def _resolve_backfill_start_date(
         self,
         *,
+        user_id: int,
         account_id: Optional[int],
         as_of_date: date,
         lookback_days: int,
@@ -271,7 +287,7 @@ class PortfolioRiskService:
             return max(window_start, first_activity or as_of_date)
 
         first_activity_candidates: List[date] = []
-        for account in self.repo.list_accounts(include_inactive=False):
+        for account in self.repo.list_accounts(user_id=user_id, include_inactive=False):
             first_activity = self.repo.get_first_activity_date(account_id=int(account.id), as_of=as_of_date)
             if first_activity is not None:
                 first_activity_candidates.append(first_activity)
@@ -466,6 +482,7 @@ class PortfolioRiskService:
     def _build_drawdown(
         self,
         *,
+        user_id: int,
         account_id: Optional[int],
         as_of_date: date,
         cost_method: str,
@@ -473,6 +490,7 @@ class PortfolioRiskService:
         lookback_days: int,
     ) -> Dict[str, Any]:
         rows = self.repo.list_daily_snapshots_for_risk(
+            user_id=user_id,
             as_of=as_of_date,
             cost_method=cost_method,
             account_id=account_id,

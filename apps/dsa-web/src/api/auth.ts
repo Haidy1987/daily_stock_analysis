@@ -1,16 +1,29 @@
 import apiClient from './index';
 
+export type AuthUser = {
+  id: number;
+  username: string;
+  role: 'admin' | 'user' | string;
+  status: 'active' | 'disabled' | string;
+};
+
 export type AuthStatusResponse = {
   authEnabled: boolean;
   loggedIn: boolean;
   passwordSet?: boolean;
   passwordChangeable?: boolean;
   setupState: 'enabled' | 'password_retained' | 'no_password';
+  currentUser?: AuthUser | null;
 };
 
 export const authApi = {
   async getStatus(): Promise<AuthStatusResponse> {
     const { data } = await apiClient.get<AuthStatusResponse>('/api/v1/auth/status');
+    return data;
+  },
+
+  async getMe(): Promise<AuthUser> {
+    const { data } = await apiClient.get<AuthUser>('/api/v1/auth/me');
     return data;
   },
 
@@ -39,10 +52,13 @@ export const authApi = {
     return data;
   },
 
-  async login(password: string, passwordConfirm?: string): Promise<void> {
-    const body: { password: string; passwordConfirm?: string } = { password };
+  async login(password: string, passwordConfirm?: string, username?: string): Promise<void> {
+    const body: { password: string; passwordConfirm?: string; username?: string } = { password };
     if (passwordConfirm !== undefined) {
       body.passwordConfirm = passwordConfirm;
+    }
+    if (username !== undefined && username.trim()) {
+      body.username = username.trim();
     }
     await apiClient.post('/api/v1/auth/login', body);
   },
@@ -61,5 +77,9 @@ export const authApi = {
 
   async logout(): Promise<void> {
     await apiClient.post('/api/v1/auth/logout');
+  },
+
+  async logoutAll(): Promise<void> {
+    await apiClient.post('/api/v1/auth/logout-all');
   },
 };
