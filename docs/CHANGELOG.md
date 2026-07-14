@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [修复] 技术图表 dispose 清理异常不再覆盖真实的 init/setOption/resize 错误阶段
 - [修复] 修复部署更新后旧页面加载失效动态模块时直接进入页面错误状态的问题：lazy 路由增加一次 session 内自动刷新恢复
 - [修复] 修复技术图表 ECharts 渲染异常导致整个页面不可用的问题：图表区域局部降级并支持重新渲染
 - [改进] 页面 RouteErrorBoundary 增加 chunk/render/unknown 错误分类、短错误编号与脱敏复制诊断信息

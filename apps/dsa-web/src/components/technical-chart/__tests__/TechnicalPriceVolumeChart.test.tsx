@@ -128,4 +128,26 @@ describe('TechnicalPriceVolumeChart', () => {
     renderChart({ compact: true });
     expect(screen.getByTestId('technical-price-volume-chart')).toHaveAttribute('data-compact', 'true');
   });
+
+  it('keeps the first error when setOption is followed by dispose', async () => {
+    renderChart();
+    await act(async () => {
+      chartHostErrorHandler({ phase: 'setOption', message: 'setOption failed' });
+      chartHostErrorHandler({ phase: 'dispose', message: 'dispose failed' });
+    });
+
+    expect(await screen.findByTestId('technical-chart-render-error')).toBeInTheDocument();
+    expect(screen.getByText(/阶段：setOption/)).toBeInTheDocument();
+    expect(screen.queryByText(/阶段：dispose/)).not.toBeInTheDocument();
+  });
+
+  it('does not show render failure when only dispose errors', async () => {
+    renderChart();
+    await act(async () => {
+      chartHostErrorHandler({ phase: 'dispose', message: 'dispose failed' });
+    });
+
+    expect(screen.getByTestId('technical-chart-echarts-host')).toBeInTheDocument();
+    expect(screen.queryByTestId('technical-chart-render-error')).not.toBeInTheDocument();
+  });
 });

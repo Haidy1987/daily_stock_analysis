@@ -194,9 +194,36 @@ describe('EChartsHost', () => {
       expect(mockInit).toHaveBeenCalled();
     });
 
-    mockGetInstanceByDom.mockReturnValue(chart);
     unmount();
     expect(disconnect).toHaveBeenCalled();
     expect(mockDispose).toHaveBeenCalled();
+  });
+
+  it('does not report dispose failures through onError', async () => {
+    mockDispose.mockImplementation(() => {
+      throw new Error('dispose failed');
+    });
+    const onError = vi.fn();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const { unmount } = render(
+      <EChartsHost
+        option={{ series: [] }}
+        style={{ width: '400px', height: '300px' }}
+        onError={onError}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(mockInit).toHaveBeenCalled();
+    });
+
+    unmount();
+    expect(mockDispose).toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalledWith(
+      expect.objectContaining({ phase: 'dispose' }),
+    );
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
   });
 });

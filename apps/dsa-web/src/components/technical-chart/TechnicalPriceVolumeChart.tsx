@@ -99,9 +99,21 @@ export function TechnicalPriceVolumeChart({
     });
 
   const handleChartError = useCallback((error: EChartsHostError) => {
-    setChartError({
-      code: `TC-${error.phase}-${renderAttempt + 1}`,
-      phase: error.phase,
+    // Cleanup-phase failures must not overwrite the original render error,
+    // and alone they should never put the chart into a degraded UI state.
+    if (error.phase === 'dispose') {
+      return;
+    }
+
+    setChartError((current) => {
+      if (current) {
+        return current;
+      }
+
+      return {
+        code: `TC-${error.phase}-${renderAttempt + 1}`,
+        phase: error.phase,
+      };
     });
   }, [renderAttempt]);
 

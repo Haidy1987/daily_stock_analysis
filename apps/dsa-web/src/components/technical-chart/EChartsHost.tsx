@@ -104,10 +104,13 @@ export function EChartsHost({
 
     const safeResize = () => {
       const chart = chartRef.current;
-      if (!chart || chart.isDisposed()) {
+      if (!chart) {
         return;
       }
       try {
+        if (chart.isDisposed()) {
+          return;
+        }
         chart.resize();
       } catch (error) {
         reportHostError(onError, 'resize', error);
@@ -171,30 +174,39 @@ export function EChartsHost({
 
     return () => {
       disposed = true;
+
       if (initFrameRef.current != null) {
         window.cancelAnimationFrame(initFrameRef.current);
         initFrameRef.current = null;
       }
+
       detachResizeListeners();
+
+      const chart = chartRef.current;
+      chartRef.current = null;
+
+      // Dispose failures must never surface as UI errors — they often mask the
+      // original init/setOption/resize failure that already triggered remount.
       try {
-        const current = echarts.getInstanceByDom(el);
-        current?.dispose();
+        if (chart && !chart.isDisposed()) {
+          chart.dispose();
+        }
       } catch (error) {
-        reportHostError(onError, 'dispose', error);
-      }
-      if (chartRef.current === echarts.getInstanceByDom(el)) {
-        chartRef.current = null;
+        console.warn('Technical chart dispose failed', error);
       }
     };
   }, [onError]);
 
   useEffect(() => {
     const chart = chartRef.current;
-    if (!chart || chart.isDisposed() || !option) {
+    if (!chart || !option) {
       return;
     }
 
     try {
+      if (chart.isDisposed()) {
+        return;
+      }
       const shouldReset = resetKey !== undefined && resetKey !== lastResetKeyRef.current;
       lastResetKeyRef.current = resetKey;
       if (shouldReset || resetKey === undefined) {
@@ -212,6 +224,9 @@ export function EChartsHost({
     }
 
     try {
+      if (chart.isDisposed()) {
+        return;
+      }
       chart.resize();
     } catch (error) {
       reportHostError(onError, 'resize', error);
