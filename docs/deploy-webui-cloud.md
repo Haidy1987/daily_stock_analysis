@@ -256,6 +256,39 @@ docker-compose -f ./docker/docker-compose.yml up -d
 
 重建完成后，用 `Ctrl+Shift+R` 强制刷新浏览器缓存，再访问页面。
 
+### 6. 部署后旧页面报「页面加载失败」或 chunk 404
+
+**症状**：Shell、导航和主题正常，但某个页面（常见于 `/technical-chart`）在接口返回 200 后仍显示「页面加载失败」；Network 里可见 `/assets/*.js` 404。
+
+**根因**：浏览器仍持有旧 tab 的 JS 引用，而新版本已替换 `static/assets` 下的哈希文件。
+
+**当前恢复机制**：
+
+- Web 前端会对动态模块加载失败自动刷新一次（同一会话、同一路径最多一次）。
+- 第二次仍失败时，错误页会显示「页面资源版本已更新，请重新加载」，并可复制脱敏错误编号。
+- `index.html` 始终 `no-store`；带内容哈希的 `/assets/*` 使用 `immutable` 长期缓存。
+
+**建议操作**：
+
+1. 手动刷新页面或重新打开目标路由。
+2. 部署时确认 Docker 镜像已重建且 `static/assets` 与 `index.html` 同步。
+3. 如需进一步降低旧 chunk 404 概率，可在 CDN/Nginx 层保留上一版本 `/assets` 24～72 小时（后续可选方案；当前容器内 build 默认清空旧 assets）。
+
+**验证 Cache-Control**：
+
+```bash
+curl -I http://<host>:<port>/
+curl -I http://<host>:<port>/assets/index-<hash>.js
+```
+
+期望：`/` 返回 `Cache-Control: no-store`；哈希 JS/CSS 返回 `public, max-age=31536000, immutable`。
+
+**efinance 权限 smoke（Docker）**：
+
+```bash
+docker compose -f ./docker/docker-compose.yml exec -u dsa server sh /app/scripts/smoke_efinance_cache_permissions.sh
+```
+
 **直接部署用户**：先确保已安装 Node.js 18+（推荐 20+），然后手动构建前端：
 
 ```bash

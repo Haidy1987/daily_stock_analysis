@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [修复] 修复部署更新后旧页面加载失效动态模块时直接进入页面错误状态的问题：lazy 路由增加一次 session 内自动刷新恢复
+- [修复] 修复技术图表 ECharts 渲染异常导致整个页面不可用的问题：图表区域局部降级并支持重新渲染
+- [改进] 页面 RouteErrorBoundary 增加 chunk/render/unknown 错误分类、短错误编号与脱敏复制诊断信息
+- [修复] 修复 Docker 容器中 efinance search-cache.json 目录权限异常导致数据源降级的问题
+- [改进] 前端哈希静态资源 `/assets/*` 使用 immutable 长期缓存，index.html 保持 no-store
 - [文档] 技术图表 05c 最终验收：记录性能测量、不新增结果缓存决策、bundle 体积、回归矩阵、回滚方案；P4 完成（100%）。
 - [新功能] 技术图表 Web 开放日/周/月切换并与 URL 双向同步；首页、选股、持仓与历史趋势抽屉增加 canonical `stock` 跳转入口。
 - [新功能] 技术图表 API 支持 `period=weekly|monthly`：日线先聚合 OHLCV 再按 technical-v1 重算完整指标；旧 `/history` 仍仅 daily。

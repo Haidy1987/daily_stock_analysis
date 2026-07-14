@@ -38,6 +38,10 @@ logger = logging.getLogger(__name__)
 # Match src="/assets/foo.js" / href="/assets/foo.css" produced by the
 # vite build. Used by the startup self-check to surface packaging
 # mismatches early (see GitHub #1064 / #1065 / #1050).
+_HASHED_ASSET_PATTERN = re.compile(
+    r"-[A-Za-z0-9_-]{8,}\.(?:js|css|mjs)$",
+    re.IGNORECASE,
+)
 _INDEX_ASSET_REF_PATTERN = re.compile(
     r"""(?:src|href)\s*=\s*["'](/assets/[^"']+)["']""",
     re.IGNORECASE,
@@ -141,6 +145,17 @@ def _missing_asset_media_type(asset_path: str) -> str:
     if content_type in _SAFE_MISSING_ASSET_MEDIA_TYPES:
         return content_type
     return "text/plain"
+
+
+def _asset_has_content_hash(asset_path: str) -> bool:
+    """Return True when a static asset filename includes a Vite content hash."""
+    return bool(_HASHED_ASSET_PATTERN.search(Path(asset_path).name))
+
+
+def _apply_frontend_asset_cache_headers(response: Response, asset_path: str) -> None:
+    """Apply long-lived caching only to content-hashed build assets."""
+    if _asset_has_content_hash(asset_path):
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
 
 
 def _warn_if_open_cors_without_auth() -> None:
@@ -509,7 +524,9 @@ def create_app(static_dir: Optional[Path] = None) -> FastAPI:
                 )
             if file_path.is_file():
                 relative_path = file_path.relative_to(assets_root).as_posix()
-                return await assets_static_files.get_response(relative_path, request.scope)
+                response = await assets_static_files.get_response(relative_path, request.scope)
+                _apply_frontend_asset_cache_headers(response, asset_path)
+                return response
             return Response(
                 content="asset not found",
                 status_code=404,

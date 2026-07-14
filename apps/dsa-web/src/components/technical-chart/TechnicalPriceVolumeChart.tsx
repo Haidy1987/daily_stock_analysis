@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTheme } from 'next-themes';
 import type { TechnicalChartResponse } from '../../api/technicalChart';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
@@ -7,7 +7,7 @@ import {
   estimateTechnicalChartHeight,
   parseVisiblePanels,
 } from './buildTechnicalChartOption';
-import { EChartsHost } from './EChartsHost';
+import { EChartsHost, type EChartsHostError } from './EChartsHost';
 import { readTechnicalChartThemeColors } from './themeColors';
 
 type TechnicalPriceVolumeChartProps = {
@@ -16,6 +16,11 @@ type TechnicalPriceVolumeChartProps = {
   compact?: boolean;
   ariaLabel?: string;
   className?: string;
+};
+
+type ChartErrorState = {
+  code: string;
+  phase: EChartsHostError['phase'];
 };
 
 export function TechnicalPriceVolumeChart({
@@ -27,6 +32,8 @@ export function TechnicalPriceVolumeChart({
 }: TechnicalPriceVolumeChartProps) {
   const { t } = useUiLanguage();
   const { resolvedTheme } = useTheme();
+  const [renderAttempt, setRenderAttempt] = useState(0);
+  const [chartError, setChartError] = useState<ChartErrorState | null>(null);
 
   const colors = useMemo(() => {
     void resolvedTheme;
@@ -91,19 +98,54 @@ export function TechnicalPriceVolumeChart({
       points: response.items.length,
     });
 
+  const handleChartError = useCallback((error: EChartsHostError) => {
+    setChartError({
+      code: `TC-${error.phase}-${renderAttempt + 1}`,
+      phase: error.phase,
+    });
+  }, [renderAttempt]);
+
+  const handleRetryRender = useCallback(() => {
+    setChartError(null);
+    setRenderAttempt((value) => value + 1);
+  }, []);
+
   return (
     <div
       className={`w-full overflow-hidden rounded-xl border border-border bg-card/40 ${className}`}
       data-testid="technical-price-volume-chart"
       data-compact={compact ? 'true' : 'false'}
     >
-      <EChartsHost
-        option={option}
-        resetKey={resetKey}
-        ariaLabel={resolvedAriaLabel}
-        className={`w-full ${compact ? 'min-h-[360px]' : 'min-h-[520px]'}`}
-        style={{ height: `${chartHeight}px` }}
-      />
+      {chartError ? (
+        <div
+          className="flex min-h-[240px] flex-col items-center justify-center gap-3 px-4 py-8 text-center"
+          data-testid="technical-chart-render-error"
+        >
+          <p className="text-sm font-medium text-primary-text">
+            {t('technicalChart.chartRenderFailed')}
+          </p>
+          <p className="text-xs text-secondary-text">
+            {t('technicalChart.chartErrorPhase', { phase: chartError.phase, code: chartError.code })}
+          </p>
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={handleRetryRender}
+          >
+            {t('technicalChart.chartRetryRender')}
+          </button>
+        </div>
+      ) : (
+        <EChartsHost
+          key={`${resetKey}|attempt-${renderAttempt}`}
+          option={option}
+          resetKey={resetKey}
+          ariaLabel={resolvedAriaLabel}
+          className={`w-full ${compact ? 'min-h-[360px]' : 'min-h-[520px]'}`}
+          style={{ height: `${chartHeight}px` }}
+          onError={handleChartError}
+        />
+      )}
     </div>
   );
 }

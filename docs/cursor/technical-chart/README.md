@@ -66,3 +66,9 @@
 - BIAS5、BIAS10、BIAS20
 - 量比、放量/缩量和量价状态
 - 支撑位、压力位、近期高点、近期低点
+
+## 生产故障恢复（2026-07）
+
+- 动态路由 chunk 404：全站 lazy 路由带一次 session 内自动刷新；RouteErrorBoundary 区分 chunk/render/unknown 并提供脱敏复制信息。
+- ECharts 渲染失败：仅图表区域降级，股票摘要与数据说明继续可用，可点击「重新渲染图表」。
+- 主题色：Canvas 使用 Safari 兼容的 legacy HSL/RGB 格式，避免 CSS Color 4 空格语法。
