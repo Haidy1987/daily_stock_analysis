@@ -14,7 +14,6 @@ const AccountPage: React.FC = () => {
     currentUser,
     passwordChangeable,
     logoutAll,
-    refreshStatus,
   } = useAuth();
   const [showLogoutAllConfirm, setShowLogoutAllConfirm] = useState(false);
   const [logoutAllBusy, setLogoutAllBusy] = useState(false);
@@ -24,10 +23,6 @@ const AccountPage: React.FC = () => {
   useEffect(() => {
     document.title = t('account.pageTitle');
   }, [t]);
-
-  useEffect(() => {
-    void refreshStatus();
-  }, [refreshStatus]);
 
   const handleLogoutAll = async () => {
     setActionError(null);
