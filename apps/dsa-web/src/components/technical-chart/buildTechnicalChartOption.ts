@@ -70,11 +70,11 @@ export type BuildTechnicalChartOptionInput = {
 };
 
 const PRICE_GRID_HEIGHT = 420;
-const PRICE_GRID_HEIGHT_COMPACT = 300;
+const PRICE_GRID_HEIGHT_COMPACT = 240;
 const SUB_GRID_HEIGHT = 150;
 const SUB_GRID_HEIGHT_COMPACT = 110;
 const BOLL_GRID_HEIGHT = 240;
-const BOLL_GRID_HEIGHT_COMPACT = 180;
+const BOLL_GRID_HEIGHT_COMPACT = 110;
 const VOLUME_GRID_HEIGHT = 120;
 const VOLUME_GRID_HEIGHT_COMPACT = 96;
 const GRID_GAP = 42;
@@ -902,28 +902,14 @@ export function buildTechnicalChartOption(input: BuildTechnicalChartOptionInput)
     tooltip: {
       trigger: 'axis',
       axisPointer: { type: 'cross' },
+      // On compact screens, keep the tooltip event and crosshair but move the
+      // detailed data out of the canvas so it cannot cover the last panel.
       backgroundColor: colors.tooltipBg,
       borderColor: colors.border,
       textStyle: { color: colors.text, fontSize: compact ? 11 : 12 },
       confine: true,
-      // Keep the bubble near the bottom on compact screens so candlesticks stay readable.
-      position: compact
-        ? (
-          _point: number[],
-          _params: unknown,
-          _dom: unknown,
-          _rect: unknown,
-          size: { contentSize: number[]; viewSize: number[] },
-        ) => {
-          const [contentW, contentH] = size.contentSize;
-          const [viewW, viewH] = size.viewSize;
-          return [
-            Math.max(8, (viewW - contentW) / 2),
-            Math.max(8, viewH - contentH - 8),
-          ];
-        }
-        : undefined,
       formatter: (params: unknown) => {
+        if (compact) return '';
         const list = Array.isArray(params) ? params : [params];
         if (!list.length) return '';
         const first = list[0] as { dataIndex?: number; axisValue?: string | number };

@@ -444,6 +444,21 @@ describe('TechnicalChartPage', () => {
     expect(screen.getByTestId('technical-chart-data-notes')).toHaveTextContent('technical-v1');
   });
 
+  it('provides an explicit query button without changing autocomplete submission', async () => {
+    renderPage('/technical-chart?stock=600519');
+
+    const queryButton = await screen.findByRole('button', { name: '查询' });
+    expect(queryButton).toBeEnabled();
+
+    const input = screen.getByTestId('stock-autocomplete-input');
+    fireEvent.change(input, { target: { value: '000001' } });
+    fireEvent.click(queryButton);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('location-probe')).toHaveTextContent('stock=000001');
+    });
+  });
+
   it('uses high-contrast theme colors for summary values', async () => {
     renderPage('/technical-chart?stock=600519');
 
@@ -451,6 +466,11 @@ describe('TechnicalChartPage', () => {
     expect(summaryGrid).toHaveTextContent('1810.00');
     expect(screen.getByText('1810.00')).toHaveClass('text-danger');
     expect(screen.getByText('+1.25%')).toHaveClass('text-danger');
-    expect(screen.getByText('1')).toHaveClass('text-foreground');
+    expect(summaryGrid.children).toHaveLength(3);
+    expect(summaryGrid).not.toHaveTextContent('数据点数');
+    const accessibleSummary = screen.getByTestId('technical-chart-accessible-summary');
+    expect(accessibleSummary).toHaveTextContent('最新交易日 2026-07-14');
+    expect(accessibleSummary.querySelector('.hidden')).toHaveTextContent('·');
+    expect(accessibleSummary.querySelector('.block')).toHaveTextContent('最新交易日 2026-07-14');
   });
 });

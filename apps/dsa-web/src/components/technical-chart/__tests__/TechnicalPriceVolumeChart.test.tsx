@@ -7,6 +7,7 @@ import { UI_LANGUAGE_STORAGE_KEY } from '../../../utils/uiLanguage';
 import { TechnicalPriceVolumeChart } from '../TechnicalPriceVolumeChart';
 
 const chartHostErrorHandler = vi.fn<(error: { phase: 'init' | 'setOption' | 'resize' | 'dispose'; message: string }) => void>();
+const chartDataIndexChangeHandler = vi.fn<(dataIndex: number) => void>();
 
 vi.mock('next-themes', () => ({
   useTheme: () => ({ resolvedTheme: 'dark' }),
@@ -15,11 +16,16 @@ vi.mock('next-themes', () => ({
 vi.mock('../EChartsHost', () => ({
   EChartsHost: ({
     onError,
+    onDataIndexChange,
   }: {
     onError?: (error: { phase: 'init' | 'setOption' | 'resize' | 'dispose'; message: string }) => void;
+    onDataIndexChange?: (dataIndex: number) => void;
   }) => {
     chartHostErrorHandler.mockImplementation((error) => {
       onError?.(error);
+    });
+    chartDataIndexChangeHandler.mockImplementation((dataIndex) => {
+      onDataIndexChange?.(dataIndex);
     });
     return <div data-testid="technical-chart-echarts-host">chart-host</div>;
   },
@@ -91,6 +97,8 @@ function renderChart(props?: Partial<ComponentProps<typeof TechnicalPriceVolumeC
 describe('TechnicalPriceVolumeChart', () => {
   beforeEach(() => {
     localStorage.setItem(UI_LANGUAGE_STORAGE_KEY, 'zh');
+    chartHostErrorHandler.mockReset();
+    chartDataIndexChangeHandler.mockReset();
   });
 
   it('renders chart host by default', () => {
@@ -127,6 +135,19 @@ describe('TechnicalPriceVolumeChart', () => {
   it('marks compact mode on wrapper', () => {
     renderChart({ compact: true });
     expect(screen.getByTestId('technical-price-volume-chart')).toHaveAttribute('data-compact', 'true');
+  });
+
+  it('renders selected mobile data below the chart instead of as an overlay', async () => {
+    renderChart({ compact: true });
+
+    await act(async () => {
+      chartDataIndexChangeHandler(0);
+    });
+
+    const inspector = await screen.findByTestId('technical-chart-mobile-data-inspector');
+    expect(inspector).toHaveTextContent('2026-07-10');
+    expect(inspector).toHaveTextContent('收 10.50');
+    expect(inspector).toHaveTextContent('查看明细');
   });
 
   it('keeps the first error when setOption is followed by dispose', async () => {

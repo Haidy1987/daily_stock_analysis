@@ -45,6 +45,7 @@ type EChartsHostProps = {
   /** Force full replace so previous stock marks/series never linger. */
   resetKey?: string;
   onError?: (error: EChartsHostError) => void;
+  onDataIndexChange?: (dataIndex: number) => void;
 };
 
 const MAX_INIT_SIZE_RETRIES = 5;
@@ -83,6 +84,7 @@ export function EChartsHost({
   ariaLabel = 'technical chart',
   resetKey,
   onError,
+  onDataIndexChange,
 }: EChartsHostProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<echarts.EChartsType | null>(null);
@@ -234,6 +236,54 @@ export function EChartsHost({
       reportHostError(onError, 'resize', error);
     }
   }, [onError, option, resetKey, chartReadyVersion]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart || !onDataIndexChange || typeof chart.on !== 'function' || typeof chart.off !== 'function') {
+      return undefined;
+    }
+
+    const resolveDataIndex = (event: unknown): number | null => {
+      if (!event || typeof event !== 'object') {
+        return null;
+      }
+
+      const payload = event as {
+        dataIndex?: unknown;
+        axesInfo?: Array<{
+          value?: unknown;
+          seriesData?: Array<{ dataIndex?: unknown }>;
+        }>;
+      };
+      if (typeof payload.dataIndex === 'number') {
+        return payload.dataIndex;
+      }
+
+      const axisInfo = payload.axesInfo?.[0];
+      const seriesDataIndex = axisInfo?.seriesData?.find(
+        (item) => typeof item.dataIndex === 'number',
+      )?.dataIndex;
+      if (typeof seriesDataIndex === 'number') {
+        return seriesDataIndex;
+      }
+
+      return typeof axisInfo?.value === 'number' ? axisInfo.value : null;
+    };
+
+    const handleDataIndexChange = (event: unknown) => {
+      const dataIndex = resolveDataIndex(event);
+      if (dataIndex != null && dataIndex >= 0) {
+        onDataIndexChange(dataIndex);
+      }
+    };
+
+    chart.on('updateAxisPointer', handleDataIndexChange);
+    chart.on('click', handleDataIndexChange);
+    return () => {
+      chart.off('updateAxisPointer', handleDataIndexChange);
+      chart.off('click', handleDataIndexChange);
+    };
+  }, [chartReadyVersion, onDataIndexChange]);
 
   return (
     <div

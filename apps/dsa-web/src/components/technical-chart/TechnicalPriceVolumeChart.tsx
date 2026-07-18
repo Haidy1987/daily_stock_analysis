@@ -5,6 +5,7 @@ import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import {
   buildTechnicalChartOption,
   estimateTechnicalChartHeight,
+  formatTooltipValue,
   parseVisiblePanels,
 } from './buildTechnicalChartOption';
 import { EChartsHost, type EChartsHostError } from './EChartsHost';
@@ -42,6 +43,50 @@ export function TechnicalPriceVolumeChart({
 
   const visible = useMemo(() => parseVisiblePanels(indicators), [indicators]);
   const chartHeight = estimateTechnicalChartHeight(visible, { compact });
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const selectedItem = selectedIndex != null ? response.items[selectedIndex] : undefined;
+  const handleDataIndexChange = useCallback((dataIndex: number) => {
+    setSelectedIndex(dataIndex >= 0 && dataIndex < response.items.length ? dataIndex : null);
+  }, [response.items.length]);
+
+  const selectedDetailRows = selectedItem
+    ? [
+      `${t('technicalChart.tooltip.open')} ${formatTooltipValue(selectedItem.open)} · ${t('technicalChart.tooltip.close')} ${formatTooltipValue(selectedItem.close)} · ${t('technicalChart.tooltip.low')} ${formatTooltipValue(selectedItem.low)} · ${t('technicalChart.tooltip.high')} ${formatTooltipValue(selectedItem.high)}`,
+      visible.ma
+        ? [
+          ['ma5', selectedItem.ma5],
+          ['ma10', selectedItem.ma10],
+          ['ma20', selectedItem.ma20],
+          ['ma30', selectedItem.ma30],
+          ['ma60', selectedItem.ma60],
+          ['ma90', selectedItem.ma90],
+          ['ma120', selectedItem.ma120],
+          ['ma250', selectedItem.ma250],
+        ].map(([key, value]) => `${t(
+          `technicalChart.chart.${key}` as Parameters<typeof t>[0],
+        )} ${formatTooltipValue(value as number | null | undefined)}`).join(' · ')
+        : null,
+      visible.boll
+        ? `${t('technicalChart.chart.bollUpper')} ${formatTooltipValue(selectedItem.bollUpper)} · ${t('technicalChart.chart.bollMid')} ${formatTooltipValue(selectedItem.bollMid)} · ${t('technicalChart.chart.bollLower')} ${formatTooltipValue(selectedItem.bollLower)} · ${t('technicalChart.tooltip.bandwidth')} ${formatTooltipValue(selectedItem.bollBandwidth, 4)} · ${t('technicalChart.tooltip.position')} ${formatTooltipValue(selectedItem.bollPosition)}`
+        : null,
+      visible.volume
+        ? `${t('technicalChart.chart.volume')} ${formatTooltipValue(selectedItem.volume, 0)} · ${t('technicalChart.tooltip.ratio')} ${formatTooltipValue(selectedItem.volumeRatio)} · ${selectedItem.volumeStatus ?? '--'}`
+        : null,
+      visible.macd
+        ? `${t('technicalChart.chart.macdDif')} ${formatTooltipValue(selectedItem.macdDif)} · ${t('technicalChart.chart.macdDea')} ${formatTooltipValue(selectedItem.macdDea)} · ${t('technicalChart.chart.macdBar')} ${formatTooltipValue(selectedItem.macdBar)}`
+        : null,
+      visible.rsi
+        ? `${t('technicalChart.chart.rsi6')} ${formatTooltipValue(selectedItem.rsi6)} · ${t('technicalChart.chart.rsi12')} ${formatTooltipValue(selectedItem.rsi12)} · ${t('technicalChart.chart.rsi24')} ${formatTooltipValue(selectedItem.rsi24)}`
+        : null,
+      visible.kdj
+        ? `${t('technicalChart.chart.kdjK')} ${formatTooltipValue(selectedItem.kdjK)} · ${t('technicalChart.chart.kdjD')} ${formatTooltipValue(selectedItem.kdjD)} · ${t('technicalChart.chart.kdjJ')} ${formatTooltipValue(selectedItem.kdjJ)}`
+        : null,
+      visible.cci ? `${t('technicalChart.chart.cci')} ${formatTooltipValue(selectedItem.cci)}` : null,
+      visible.bias
+        ? `${t('technicalChart.chart.bias5')} ${formatTooltipValue(selectedItem.bias5)} · ${t('technicalChart.chart.bias10')} ${formatTooltipValue(selectedItem.bias10)} · ${t('technicalChart.chart.bias20')} ${formatTooltipValue(selectedItem.bias20)}`
+        : null,
+    ].filter((row): row is string => Boolean(row))
+    : [];
 
   const option = useMemo(
     () => buildTechnicalChartOption({
@@ -161,8 +206,33 @@ export function TechnicalPriceVolumeChart({
           className={`w-full ${compact ? 'min-h-[360px]' : 'min-h-[520px]'}`}
           style={{ height: `${chartHeight}px` }}
           onError={handleChartError}
+          onDataIndexChange={compact ? handleDataIndexChange : undefined}
         />
       )}
+      {compact && selectedItem ? (
+        <section
+          className="border-t border-border bg-card/70 px-2.5 py-2"
+          data-testid="technical-chart-mobile-data-inspector"
+          aria-live="polite"
+        >
+          <div className="flex items-center justify-between gap-2 text-xs">
+            <div>
+              <p className="text-secondary-text">{t('technicalChart.mobile.selectedData')}</p>
+              <p className="font-medium text-primary-text">
+                {selectedItem.date} · {t('technicalChart.tooltip.close')} {formatTooltipValue(selectedItem.close)}
+              </p>
+            </div>
+          </div>
+          <details className="mt-2">
+            <summary className="cursor-pointer select-none text-xs font-medium text-primary-text">
+              {t('technicalChart.mobile.viewDetails')}
+            </summary>
+            <div className="mt-2 space-y-1 text-xs leading-5 text-secondary-text">
+              {selectedDetailRows.map((row) => <div key={row}>{row}</div>)}
+            </div>
+          </details>
+        </section>
+      ) : null}
     </div>
   );
 }

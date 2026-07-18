@@ -290,7 +290,7 @@ const TechnicalChartPage: React.FC = () => {
     return key ? t(key) : code;
   }, [t]);
 
-  const accessibleSummary = chart
+  const accessibleSummaryBase = chart
     ? t('technicalChart.accessibleSummary', {
       stock: chart.stockName ? `${chart.stockName} (${chart.stockCode})` : chart.stockCode,
       period: t(periodLabelKey(period)),
@@ -298,6 +298,10 @@ const TechnicalChartPage: React.FC = () => {
       points: chart.items.length,
     })
     : '';
+  const latestTradingDay = chart?.items?.length && lastItem?.date
+    ? t('technicalChart.latestTradingDay', { date: lastItem.date })
+    : '';
+  const accessibleSummary = [accessibleSummaryBase, latestTradingDay].filter(Boolean).join(' · ');
   const changePercent = summary?.latestChangePercent;
   const marketValueTone = changePercent != null && changePercent > 0
     ? 'text-danger'
@@ -306,27 +310,46 @@ const TechnicalChartPage: React.FC = () => {
       : 'text-foreground';
 
   return (
-    <AppPage>
+    <AppPage className="m-0 max-w-none p-0">
       <PageHeader
+        className="!p-[5px]"
         title={t('technicalChart.pageTitle')}
         description={t('technicalChart.pageDescription')}
       />
 
-      <Card className="mb-4 space-y-4" padding="md">
-        <div className="max-w-xl">
+      <Card className="mb-4 space-y-4 !rounded-none before:!rounded-none p-[5px]" padding="none">
+        <form
+          className="max-w-xl"
+          onSubmit={(event) => {
+            event.preventDefault();
+            handleStockSubmit(searchInput);
+          }}
+        >
           <label className="mb-2 block text-sm text-secondary-text" htmlFor="technical-chart-stock">
             {t('technicalChart.searchLabel')}
           </label>
-          <StockAutocomplete
-            value={searchInput}
-            onChange={setSearchInput}
-            onSubmit={handleStockSubmit}
-            placeholder={t('technicalChart.searchPlaceholder')}
-            ariaLabel={t('technicalChart.searchLabel')}
-          />
-        </div>
+          <div className="relative">
+            <StockAutocomplete
+              value={searchInput}
+              onChange={setSearchInput}
+              onSubmit={handleStockSubmit}
+              placeholder={t('technicalChart.searchPlaceholder')}
+              ariaLabel={t('technicalChart.searchLabel')}
+              className="!pr-20"
+            />
+            <Button
+              type="submit"
+              size="sm"
+              className="absolute right-1 top-1/2 z-10 h-9 -translate-y-1/2 !px-3 !text-xs sm:!text-sm"
+              disabled={!searchInput.trim() || loading}
+              aria-label={t('technicalChart.queryButton')}
+            >
+              {t('technicalChart.queryButton')}
+            </Button>
+          </div>
+        </form>
 
-        <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 sm:flex-wrap sm:overflow-visible">
+        <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1 sm:flex-wrap sm:gap-2 sm:overflow-visible">
           <span className="shrink-0 self-center text-xs text-secondary-text">
             {t('technicalChart.periodLabel')}
           </span>
@@ -334,8 +357,8 @@ const TechnicalChartPage: React.FC = () => {
             <Button
               key={option}
               type="button"
-              size="sm"
-              className="shrink-0"
+              size="xsm"
+              className="shrink-0 !text-xs sm:!text-sm"
               variant={period === option ? 'primary' : 'secondary'}
               aria-pressed={period === option}
               onClick={() => syncUrl({ period: option })}
@@ -347,8 +370,8 @@ const TechnicalChartPage: React.FC = () => {
             <Button
               key={option}
               type="button"
-              size="sm"
-              className="shrink-0"
+              size="xsm"
+              className="shrink-0 !text-xs sm:!text-sm"
               variant={days === option ? 'primary' : 'secondary'}
               aria-pressed={days === option}
               onClick={() => syncUrl({ days: option })}
@@ -359,7 +382,7 @@ const TechnicalChartPage: React.FC = () => {
         </div>
 
         <div className="space-y-2" data-testid="technical-chart-indicator-toggles">
-          <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 sm:flex-wrap sm:overflow-visible">
+          <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1 sm:flex-wrap sm:gap-2 sm:overflow-visible">
             <span className="shrink-0 self-center text-xs text-secondary-text">
               {t('technicalChart.indicatorsLabel')}
             </span>
@@ -367,8 +390,8 @@ const TechnicalChartPage: React.FC = () => {
               <Button
                 key={key}
                 type="button"
-                size="sm"
-                className="shrink-0"
+                size="xsm"
+                className="shrink-0 !text-xs sm:!text-sm"
                 variant={visiblePanels[key] ? 'primary' : 'secondary'}
                 aria-pressed={visiblePanels[key]}
                 onClick={() => handleTogglePanel(key)}
@@ -377,7 +400,7 @@ const TechnicalChartPage: React.FC = () => {
               </Button>
             ))}
           </div>
-          <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 sm:flex-wrap sm:overflow-visible">
+          <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1 sm:flex-wrap sm:gap-2 sm:overflow-visible">
             <span className="shrink-0 self-center text-xs text-secondary-text">
               {t('technicalChart.subplotLabel')}
             </span>
@@ -385,8 +408,8 @@ const TechnicalChartPage: React.FC = () => {
               <Button
                 key={key}
                 type="button"
-                size="sm"
-                className="shrink-0"
+                size="xsm"
+                className="shrink-0 !text-xs sm:!text-sm"
                 variant={visiblePanels[key] ? 'primary' : 'secondary'}
                 aria-pressed={visiblePanels[key]}
                 onClick={() => handleTogglePanel(key)}
@@ -450,7 +473,7 @@ const TechnicalChartPage: React.FC = () => {
       </Card>
 
       {stock ? (
-        <Card className="space-y-4" padding="md">
+        <Card className="space-y-4 !rounded-none before:!rounded-none p-[5px]" padding="none">
           {loading ? <Loading label={t('technicalChart.loading')} /> : null}
 
           {error ? (
@@ -483,40 +506,37 @@ const TechnicalChartPage: React.FC = () => {
               ) : null}
 
               <div
-                className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
+                className="grid grid-cols-3 gap-2 sm:gap-3"
                 data-testid="technical-chart-summary-grid"
               >
-                <div className="rounded-xl border border-border/80 bg-background/45 px-4 py-3 shadow-sm">
+                <div className="min-w-0 rounded-xl border border-border/80 bg-background/45 px-2 py-2 shadow-sm sm:px-4 sm:py-3">
                   <div className="text-xs font-medium text-secondary-text">{t('technicalChart.summary.stock')}</div>
-                  <div className="mt-1 text-base font-semibold text-foreground">
+                  <div className="mt-1 min-w-0 break-words text-xs font-semibold text-foreground sm:text-base">
                     {chart.stockName || '—'} ({chart.stockCode})
                   </div>
                 </div>
-                <div className="rounded-xl border border-border/80 bg-background/45 px-4 py-3 shadow-sm">
+                <div className="min-w-0 rounded-xl border border-border/80 bg-background/45 px-2 py-2 shadow-sm sm:px-4 sm:py-3">
                   <div className="text-xs font-medium text-secondary-text">{t('technicalChart.summary.latestClose')}</div>
-                  <div className={`mt-1 text-lg font-bold tabular-nums ${marketValueTone}`}>
+                  <div className={`mt-1 text-sm font-bold tabular-nums sm:text-lg ${marketValueTone}`}>
                     {formatOptionalNumber(summary?.latestClose)}
                   </div>
                 </div>
-                <div className="rounded-xl border border-border/80 bg-background/45 px-4 py-3 shadow-sm">
+                <div className="min-w-0 rounded-xl border border-border/80 bg-background/45 px-2 py-2 shadow-sm sm:px-4 sm:py-3">
                   <div className="text-xs font-medium text-secondary-text">{t('technicalChart.summary.changePercent')}</div>
-                  <div className={`mt-1 text-lg font-bold tabular-nums ${marketValueTone}`}>
+                  <div className={`mt-1 text-sm font-bold tabular-nums sm:text-lg ${marketValueTone}`}>
                     {formatSignedPercent(summary?.latestChangePercent)}
                   </div>
-                </div>
-                <div className="rounded-xl border border-border/80 bg-background/45 px-4 py-3 shadow-sm">
-                  <div className="text-xs font-medium text-secondary-text">{t('technicalChart.summary.dataPoints')}</div>
-                  <div className="mt-1 text-lg font-bold tabular-nums text-foreground">
-                    {chart.items.length}
-                  </div>
-                  {lastItem?.date ? (
-                    <div className="mt-0.5 text-xs text-secondary-text">{lastItem.date}</div>
-                  ) : null}
                 </div>
               </div>
 
               <p className="text-sm text-secondary-text" data-testid="technical-chart-accessible-summary">
-                {accessibleSummary}
+                {accessibleSummaryBase}
+                {latestTradingDay ? (
+                  <>
+                    <span className="hidden lg:inline"> · </span>
+                    <span className="block lg:inline">{latestTradingDay}</span>
+                  </>
+                ) : null}
               </p>
 
               {chart.items.length > 0 ? (

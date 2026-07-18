@@ -550,7 +550,7 @@ describe('buildTechnicalChartOption', () => {
     expect(dif.data).toEqual([null]);
   });
 
-  it('uses compact layout heights and bottom tooltip positioning', () => {
+  it('uses compact layout heights and keeps the crosshair without tooltip content', () => {
     const visible = {
       ...TECHNICAL_CHART_PC_DEFAULT_PANELS,
       rsi: false,
@@ -566,7 +566,7 @@ describe('buildTechnicalChartOption', () => {
       layout: { compact: true },
     });
     expect(typeof option.tooltip).toBe('object');
-    expect((option.tooltip as { position?: unknown }).position).toEqual(expect.any(Function));
+    expect((option.tooltip as { formatter?: (params: unknown) => string }).formatter?.([])).toBe('');
   });
 
   it('omits axisPointer on the sole labeled xAxis (showLabel=true)', () => {

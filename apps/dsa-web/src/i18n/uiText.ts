@@ -93,6 +93,10 @@ const zh = {
   'layout.logoutTitle': '退出登录',
 
   'technicalChart.accessibleSummary': '{stock} · {period} · {days} 日 · {points} 个数据点',
+  'technicalChart.latestTradingDay': '最新交易日 {date}',
+  'technicalChart.queryButton': '查询',
+  'technicalChart.mobile.selectedData': '选中交易日',
+  'technicalChart.mobile.viewDetails': '查看明细',
   'technicalChart.chartAriaLabel': '{stock} 技术图表，{period}，{days} 日，{points} 个数据点',
   'technicalChart.chartPlaceholder': '暂无可绘制行情点',
   'technicalChart.chartRenderFailed': '图表渲染失败',
@@ -1075,6 +1079,10 @@ const en: Record<UiTextKey, string> = {
   'layout.logoutTitle': 'Log out',
 
   'technicalChart.accessibleSummary': '{stock} · {period} · {days} days · {points} points',
+  'technicalChart.latestTradingDay': 'Latest trading day {date}',
+  'technicalChart.queryButton': 'Query',
+  'technicalChart.mobile.selectedData': 'Selected trading day',
+  'technicalChart.mobile.viewDetails': 'View details',
   'technicalChart.chartAriaLabel': '{stock} technical chart, {period}, {days} days, {points} points',
   'technicalChart.chartPlaceholder': 'No plottable bars yet',
   'technicalChart.chartRenderFailed': 'Chart rendering failed',
