@@ -9,6 +9,11 @@ export type TechnicalChartThemeColors = {
   ma5: string;
   ma10: string;
   ma20: string;
+  ma30: string;
+  ma60: string;
+  ma90: string;
+  ma120: string;
+  ma250: string;
   bollUpper: string;
   bollMid: string;
   bollLower: string;
@@ -29,9 +34,14 @@ const FALLBACK: TechnicalChartThemeColors = {
   ma5: 'hsl(199, 89%, 48%)',
   ma10: 'hsl(271, 81%, 66%)',
   ma20: 'hsl(38, 92%, 50%)',
-  bollUpper: 'hsl(215, 20%, 65%)',
-  bollMid: 'hsl(210, 40%, 78%)',
-  bollLower: 'hsl(215, 20%, 65%)',
+  ma30: 'hsl(48, 96%, 53%)',
+  ma60: 'hsl(217, 91%, 60%)',
+  ma90: 'hsl(330, 81%, 60%)',
+  ma120: 'hsl(172, 66%, 50%)',
+  ma250: 'hsl(215, 20%, 65%)',
+  bollUpper: 'hsl(38, 92%, 50%)',
+  bollMid: 'hsl(271, 81%, 66%)',
+  bollLower: 'hsl(199, 89%, 48%)',
   support: 'hsl(149, 100%, 42%)',
   resistance: 'hsl(0, 88%, 62%)',
   markHigh: 'hsl(0, 88%, 62%)',
@@ -108,6 +118,11 @@ function normalizeThemeColors(colors: TechnicalChartThemeColors): TechnicalChart
     ma5: normalizeColorForCanvas(colors.ma5),
     ma10: normalizeColorForCanvas(colors.ma10),
     ma20: normalizeColorForCanvas(colors.ma20),
+    ma30: normalizeColorForCanvas(colors.ma30),
+    ma60: normalizeColorForCanvas(colors.ma60),
+    ma90: normalizeColorForCanvas(colors.ma90),
+    ma120: normalizeColorForCanvas(colors.ma120),
+    ma250: normalizeColorForCanvas(colors.ma250),
     bollUpper: normalizeColorForCanvas(colors.bollUpper),
     bollMid: normalizeColorForCanvas(colors.bollMid),
     bollLower: normalizeColorForCanvas(colors.bollLower),
@@ -137,9 +152,14 @@ export function readTechnicalChartThemeColors(
     ma5: readCssColor(styles, '--color-cyan', FALLBACK.ma5),
     ma10: FALLBACK.ma10,
     ma20: FALLBACK.ma20,
-    bollUpper: readCssColor(styles, '--muted-foreground', FALLBACK.bollUpper),
-    bollMid: readCssColor(styles, '--foreground', FALLBACK.bollMid),
-    bollLower: readCssColor(styles, '--muted-foreground', FALLBACK.bollLower),
+    ma30: FALLBACK.ma30,
+    ma60: FALLBACK.ma60,
+    ma90: FALLBACK.ma90,
+    ma120: FALLBACK.ma120,
+    ma250: FALLBACK.ma250,
+    bollUpper: readCssColor(styles, '--color-warning', FALLBACK.bollUpper),
+    bollMid: readCssColor(styles, '--color-purple', FALLBACK.bollMid),
+    bollLower: readCssColor(styles, '--color-cyan', FALLBACK.bollLower),
     support: readCssColor(styles, '--home-price-down', FALLBACK.support),
     resistance: readCssColor(styles, '--home-price-up', FALLBACK.resistance),
     markHigh: readCssColor(styles, '--home-price-up', FALLBACK.markHigh),

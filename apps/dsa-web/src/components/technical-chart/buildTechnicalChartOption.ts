@@ -19,9 +19,9 @@ export type TechnicalChartVisiblePanels = {
   supportResistance: boolean;
 };
 
-export type SubPanelId = 'volume' | 'macd' | 'rsi' | 'kdj' | 'cci' | 'bias';
+export type SubPanelId = 'volume' | 'boll' | 'macd' | 'rsi' | 'kdj' | 'cci' | 'bias';
 
-export const SUB_PANEL_ORDER: SubPanelId[] = ['volume', 'macd', 'rsi', 'kdj', 'cci', 'bias'];
+export const SUB_PANEL_ORDER: SubPanelId[] = ['volume', 'boll', 'macd', 'rsi', 'kdj', 'cci', 'bias'];
 
 export const TECHNICAL_CHART_PC_DEFAULT_PANELS: TechnicalChartVisiblePanels = {
   ma: true,
@@ -29,9 +29,9 @@ export const TECHNICAL_CHART_PC_DEFAULT_PANELS: TechnicalChartVisiblePanels = {
   volume: true,
   macd: true,
   rsi: true,
-  kdj: false,
-  cci: false,
-  bias: false,
+  kdj: true,
+  cci: true,
+  bias: true,
   supportResistance: true,
 };
 
@@ -40,20 +40,12 @@ export const TECHNICAL_CHART_MOBILE_DEFAULT_PANELS: TechnicalChartVisiblePanels 
   boll: true,
   volume: true,
   macd: true,
-  rsi: false,
-  kdj: false,
-  cci: false,
-  bias: false,
+  rsi: true,
+  kdj: true,
+  cci: true,
+  bias: true,
   supportResistance: true,
 };
-
-export const SUBPLOT_TOGGLE_KEYS: Array<keyof TechnicalChartVisiblePanels> = [
-  'macd',
-  'rsi',
-  'kdj',
-  'cci',
-  'bias',
-];
 
 const PANEL_TOKEN_BY_KEY: Array<{ key: keyof TechnicalChartVisiblePanels; token: string }> = [
   { key: 'ma', token: 'ma' },
@@ -81,12 +73,26 @@ const PRICE_GRID_HEIGHT = 420;
 const PRICE_GRID_HEIGHT_COMPACT = 300;
 const SUB_GRID_HEIGHT = 150;
 const SUB_GRID_HEIGHT_COMPACT = 110;
-const GRID_GAP = 18;
-const GRID_GAP_COMPACT = 12;
+const BOLL_GRID_HEIGHT = 240;
+const BOLL_GRID_HEIGHT_COMPACT = 180;
+const VOLUME_GRID_HEIGHT = 120;
+const VOLUME_GRID_HEIGHT_COMPACT = 96;
+const GRID_GAP = 42;
+const GRID_GAP_COMPACT = 34;
 const GRID_TOP = 40;
 const GRID_TOP_COMPACT = 32;
 const SLIDER_RESERVE = 48;
 const SLIDER_RESERVE_COMPACT = 40;
+
+function resolveSubPanelHeight(id: SubPanelId, compact: boolean): number {
+  if (id === 'boll') {
+    return compact ? BOLL_GRID_HEIGHT_COMPACT : BOLL_GRID_HEIGHT;
+  }
+  if (id === 'volume') {
+    return compact ? VOLUME_GRID_HEIGHT_COMPACT : VOLUME_GRID_HEIGHT;
+  }
+  return compact ? SUB_GRID_HEIGHT_COMPACT : SUB_GRID_HEIGHT;
+}
 
 /** ECharts candlestick value order: [open, close, low, high]. */
 export function toCandlestickValue(item: Pick<TechnicalChartItem, 'open' | 'close' | 'low' | 'high'>): [
@@ -159,31 +165,6 @@ export function togglePanel(
   return { ...visible, [key]: !visible[key] };
 }
 
-/** On compact screens, keep at most one of MACD/RSI/KDJ/CCI/BIAS enabled. */
-export function enforceSingleSubplot(
-  visible: TechnicalChartVisiblePanels,
-  enabledKey?: keyof TechnicalChartVisiblePanels,
-): TechnicalChartVisiblePanels {
-  const next = { ...visible };
-  if (enabledKey && SUBPLOT_TOGGLE_KEYS.includes(enabledKey) && next[enabledKey]) {
-    for (const key of SUBPLOT_TOGGLE_KEYS) {
-      if (key !== enabledKey) {
-        next[key] = false;
-      }
-    }
-    return next;
-  }
-  const active = SUBPLOT_TOGGLE_KEYS.filter((key) => next[key]);
-  if (active.length <= 1) {
-    return next;
-  }
-  const keep = active[0];
-  for (const key of SUBPLOT_TOGGLE_KEYS) {
-    next[key] = key === keep;
-  }
-  return next;
-}
-
 export function resolveActiveSubPanels(visible: TechnicalChartVisiblePanels): SubPanelId[] {
   return SUB_PANEL_ORDER.filter((id) => visible[id]);
 }
@@ -192,6 +173,7 @@ export function buildPanelIndexMap(visible: TechnicalChartVisiblePanels): Record
   const map: Record<'price' | SubPanelId, number | undefined> = {
     price: 0,
     volume: undefined,
+    boll: undefined,
     macd: undefined,
     rsi: undefined,
     kdj: undefined,
@@ -212,12 +194,14 @@ export function estimateTechnicalChartHeight(
 ): number {
   const compact = Boolean(options?.compact);
   const priceH = compact ? PRICE_GRID_HEIGHT_COMPACT : PRICE_GRID_HEIGHT;
-  const subH = compact ? SUB_GRID_HEIGHT_COMPACT : SUB_GRID_HEIGHT;
   const gap = compact ? GRID_GAP_COMPACT : GRID_GAP;
   const top = compact ? GRID_TOP_COMPACT : GRID_TOP;
   const slider = compact ? SLIDER_RESERVE_COMPACT : SLIDER_RESERVE;
-  const subCount = resolveActiveSubPanels(visible).length;
-  return top + priceH + subCount * (subH + gap) + slider;
+  const subHeight = resolveActiveSubPanels(visible).reduce(
+    (total, id) => total + gap + resolveSubPanelHeight(id, compact),
+    0,
+  );
+  return top + priceH + subHeight + slider;
 }
 
 function formatLevelLabel(level: ChartLevel, prefix: string): string {
@@ -294,7 +278,9 @@ function buildCategoryAxis(
     splitLine: { show: false },
     min: 'dataMin' as const,
     max: 'dataMax' as const,
-    axisPointer: showLabel ? undefined : { label: { show: false } },
+    // Omit axisPointer when showing labels: explicit undefined overrides ECharts defaults
+    // and crashes with axisPointer.link + tooltip cross (Cannot set 'status' of undefined).
+    ...(showLabel ? {} : { axisPointer: { label: { show: false } } }),
   };
 }
 
@@ -302,7 +288,6 @@ export function buildTechnicalChartOption(input: BuildTechnicalChartOptionInput)
   const { response, colors } = input;
   const compact = Boolean(input.layout?.compact);
   const priceH = compact ? PRICE_GRID_HEIGHT_COMPACT : PRICE_GRID_HEIGHT;
-  const subH = compact ? SUB_GRID_HEIGHT_COMPACT : SUB_GRID_HEIGHT;
   const gap = compact ? GRID_GAP_COMPACT : GRID_GAP;
   const top = compact ? GRID_TOP_COMPACT : GRID_TOP;
   const visible: TechnicalChartVisiblePanels = {
@@ -315,6 +300,11 @@ export function buildTechnicalChartOption(input: BuildTechnicalChartOptionInput)
     ma5: 'MA5',
     ma10: 'MA10',
     ma20: 'MA20',
+    ma30: 'MA30',
+    ma60: 'MA60',
+    ma90: 'MA90',
+    ma120: 'MA120',
+    ma250: 'MA250',
     bollUpper: 'BOLL.U',
     bollMid: 'BOLL.M',
     bollLower: 'BOLL.L',
@@ -344,6 +334,17 @@ export function buildTechnicalChartOption(input: BuildTechnicalChartOptionInput)
     ratio: 'ratio',
     ...input.labels,
   };
+  const maLegendLabels = [
+    labels.ma5,
+    labels.ma10,
+    labels.ma20,
+    labels.ma30,
+    labels.ma60,
+    labels.ma90,
+    labels.ma120,
+    labels.ma250,
+  ];
+  const bollCandleName = `${labels.candle} · BOLL`;
 
   const items = response.items || [];
   const categories = items.map((item) => item.date);
@@ -415,85 +416,28 @@ export function buildTechnicalChartOption(input: BuildTechnicalChartOptionInput)
   ];
 
   if (visible.ma) {
-    series.push(
-      {
-        id: `ma5-${response.stockCode}`,
-        name: labels.ma5,
-        type: 'line',
-        xAxisIndex: 0,
-        yAxisIndex: 0,
-        data: items.map((item) => nullableSeriesValue(item.ma5)),
-        showSymbol: false,
-        connectNulls: false,
-        lineStyle: { width: 1.5, color: colors.ma5 },
-        itemStyle: { color: colors.ma5 },
-      },
-      {
-        id: `ma10-${response.stockCode}`,
-        name: labels.ma10,
-        type: 'line',
-        xAxisIndex: 0,
-        yAxisIndex: 0,
-        data: items.map((item) => nullableSeriesValue(item.ma10)),
-        showSymbol: false,
-        connectNulls: false,
-        lineStyle: { width: 1.5, color: colors.ma10 },
-        itemStyle: { color: colors.ma10 },
-      },
-      {
-        id: `ma20-${response.stockCode}`,
-        name: labels.ma20,
-        type: 'line',
-        xAxisIndex: 0,
-        yAxisIndex: 0,
-        data: items.map((item) => nullableSeriesValue(item.ma20)),
-        showSymbol: false,
-        connectNulls: false,
-        lineStyle: { width: 1.5, color: colors.ma20 },
-        itemStyle: { color: colors.ma20 },
-      },
-    );
-  }
-
-  if (visible.boll) {
-    series.push(
-      {
-        id: `boll-upper-${response.stockCode}`,
-        name: labels.bollUpper,
-        type: 'line',
-        xAxisIndex: 0,
-        yAxisIndex: 0,
-        data: items.map((item) => nullableSeriesValue(item.bollUpper)),
-        showSymbol: false,
-        connectNulls: false,
-        lineStyle: { width: 1, color: colors.bollUpper, type: 'dotted' },
-        itemStyle: { color: colors.bollUpper },
-      },
-      {
-        id: `boll-mid-${response.stockCode}`,
-        name: labels.bollMid,
-        type: 'line',
-        xAxisIndex: 0,
-        yAxisIndex: 0,
-        data: items.map((item) => nullableSeriesValue(item.bollMid)),
-        showSymbol: false,
-        connectNulls: false,
-        lineStyle: { width: 1, color: colors.bollMid, type: 'dotted' },
-        itemStyle: { color: colors.bollMid },
-      },
-      {
-        id: `boll-lower-${response.stockCode}`,
-        name: labels.bollLower,
-        type: 'line',
-        xAxisIndex: 0,
-        yAxisIndex: 0,
-        data: items.map((item) => nullableSeriesValue(item.bollLower)),
-        showSymbol: false,
-        connectNulls: false,
-        lineStyle: { width: 1, color: colors.bollLower, type: 'dotted' },
-        itemStyle: { color: colors.bollLower },
-      },
-    );
+    const maSeriesConfig = [
+      { period: 5, label: labels.ma5, color: colors.ma5, values: items.map((item) => item.ma5) },
+      { period: 10, label: labels.ma10, color: colors.ma10, values: items.map((item) => item.ma10) },
+      { period: 20, label: labels.ma20, color: colors.ma20, values: items.map((item) => item.ma20) },
+      { period: 30, label: labels.ma30, color: colors.ma30, values: items.map((item) => item.ma30) },
+      { period: 60, label: labels.ma60, color: colors.ma60, values: items.map((item) => item.ma60) },
+      { period: 90, label: labels.ma90, color: colors.ma90, values: items.map((item) => item.ma90) },
+      { period: 120, label: labels.ma120, color: colors.ma120, values: items.map((item) => item.ma120) },
+      { period: 250, label: labels.ma250, color: colors.ma250, values: items.map((item) => item.ma250) },
+    ];
+    series.push(...maSeriesConfig.map(({ period, label, color, values }) => ({
+      id: `ma${period}-${response.stockCode}`,
+      name: label,
+      type: 'line' as const,
+      xAxisIndex: 0,
+      yAxisIndex: 0,
+      data: values.map(nullableSeriesValue),
+      showSymbol: false,
+      connectNulls: false,
+      lineStyle: { width: 1.5, color },
+      itemStyle: { color },
+    })));
   }
 
   if (panelIndex.volume != null) {
@@ -509,6 +453,67 @@ export function buildTechnicalChartOption(input: BuildTechnicalChartOptionInput)
         itemStyle: { color: isUpBar(item) ? colors.up : colors.down },
       })),
     });
+  }
+
+  if (panelIndex.boll != null) {
+    const axis = panelIndex.boll;
+    series.push(
+      {
+        id: `boll-candle-${response.stockCode}`,
+        name: bollCandleName,
+        type: 'candlestick',
+        xAxisIndex: axis,
+        yAxisIndex: axis,
+        data: items.map((item) => toCandlestickValue(item)),
+        itemStyle: {
+          color: colors.up,
+          color0: colors.down,
+          borderColor: colors.up,
+          borderColor0: colors.down,
+          opacity: 0.84,
+        },
+        z: 1,
+      },
+      {
+        id: `boll-upper-${response.stockCode}`,
+        name: labels.bollUpper,
+        type: 'line',
+        xAxisIndex: axis,
+        yAxisIndex: axis,
+        data: items.map((item) => nullableSeriesValue(item.bollUpper)),
+        showSymbol: false,
+        connectNulls: false,
+        lineStyle: { width: 1.35, color: colors.bollUpper, type: 'solid' },
+        itemStyle: { color: colors.bollUpper },
+        z: 3,
+      },
+      {
+        id: `boll-mid-${response.stockCode}`,
+        name: labels.bollMid,
+        type: 'line',
+        xAxisIndex: axis,
+        yAxisIndex: axis,
+        data: items.map((item) => nullableSeriesValue(item.bollMid)),
+        showSymbol: false,
+        connectNulls: false,
+        lineStyle: { width: 1.7, color: colors.bollMid, type: 'solid' },
+        itemStyle: { color: colors.bollMid },
+        z: 4,
+      },
+      {
+        id: `boll-lower-${response.stockCode}`,
+        name: labels.bollLower,
+        type: 'line',
+        xAxisIndex: axis,
+        yAxisIndex: axis,
+        data: items.map((item) => nullableSeriesValue(item.bollLower)),
+        showSymbol: false,
+        connectNulls: false,
+        lineStyle: { width: 1.35, color: colors.bollLower, type: 'solid' },
+        itemStyle: { color: colors.bollLower },
+        z: 3,
+      },
+    );
   }
 
   if (panelIndex.macd != null) {
@@ -739,6 +744,34 @@ export function buildTechnicalChartOption(input: BuildTechnicalChartOptionInput)
     );
   }
 
+  let nextPanelTop = top + priceH;
+  const subLayouts = activeSubs.map((id) => {
+    const height = resolveSubPanelHeight(id, compact);
+    nextPanelTop += gap;
+    const layout = { id, top: nextPanelTop, height };
+    nextPanelTop += height;
+    return layout;
+  });
+
+  const panelTitleById: Record<SubPanelId, string> = {
+    volume: labels.volume,
+    boll: 'BOLL (20, 2)',
+    macd: 'MACD (12, 26, 9)',
+    rsi: 'RSI (6, 12, 24)',
+    kdj: 'KDJ (9, 3, 3)',
+    cci: 'CCI (14)',
+    bias: 'BIAS (5, 10, 20)',
+  };
+  const panelLegendDataById: Record<SubPanelId, string[]> = {
+    volume: [labels.volume],
+    boll: [bollCandleName, labels.bollUpper, labels.bollMid, labels.bollLower],
+    macd: [labels.macdBar, labels.macdDif, labels.macdDea],
+    rsi: [labels.rsi6, labels.rsi12, labels.rsi24],
+    kdj: [labels.kdjK, labels.kdjD, labels.kdjJ],
+    cci: [labels.cci],
+    bias: [labels.bias5, labels.bias10, labels.bias20],
+  };
+
   const grids = [
     {
       id: 'price',
@@ -747,12 +780,12 @@ export function buildTechnicalChartOption(input: BuildTechnicalChartOptionInput)
       top,
       height: priceH,
     },
-    ...activeSubs.map((id, offset) => ({
-      id,
+    ...subLayouts.map((layout) => ({
+      id: layout.id,
       left: compact ? 44 : 52,
       right: 12,
-      top: top + priceH + gap + offset * (subH + gap),
-      height: subH,
+      top: layout.top,
+      height: layout.height,
     })),
   ];
 
@@ -779,7 +812,15 @@ export function buildTechnicalChartOption(input: BuildTechnicalChartOptionInput)
   for (const id of activeSubs) {
     const gridIndex = panelIndex[id];
     if (gridIndex == null) continue;
-    if (id === 'rsi') {
+    if (id === 'boll') {
+      yAxis.push({
+        gridIndex,
+        scale: true,
+        axisLine: { show: false },
+        axisLabel: { color: colors.muted, fontSize: 10, showMaxLabel: false },
+        splitLine: { lineStyle: { color: colors.border, opacity: 0.22 } },
+      });
+    } else if (id === 'rsi') {
       yAxis.push({
         gridIndex,
         min: 0,
@@ -809,16 +850,9 @@ export function buildTechnicalChartOption(input: BuildTechnicalChartOptionInput)
     }
   }
 
-  const legendData = [
+  const mainLegendData = [
     labels.candle,
-    ...(visible.ma ? [labels.ma5, labels.ma10, labels.ma20] : []),
-    ...(visible.boll ? [labels.bollUpper, labels.bollMid, labels.bollLower] : []),
-    ...(visible.volume ? [labels.volume] : []),
-    ...(visible.macd ? [labels.macdBar, labels.macdDif, labels.macdDea] : []),
-    ...(visible.rsi ? [labels.rsi6, labels.rsi12, labels.rsi24] : []),
-    ...(visible.kdj ? [labels.kdjK, labels.kdjD, labels.kdjJ] : []),
-    ...(visible.cci ? [labels.cci] : []),
-    ...(visible.bias ? [labels.bias5, labels.bias10, labels.bias20] : []),
+    ...(visible.ma ? maLegendLabels : []),
   ];
 
   const zoomStart = items.length > 120 ? Math.max(0, 100 - (120 / items.length) * 100) : 0;
@@ -827,13 +861,40 @@ export function buildTechnicalChartOption(input: BuildTechnicalChartOptionInput)
     animation: false,
     backgroundColor: colors.background,
     textStyle: { color: colors.text },
-    legend: {
-      top: 0,
-      left: 0,
-      type: 'scroll',
-      textStyle: { color: colors.muted, fontSize: 11 },
-      data: legendData,
-    },
+    title: subLayouts.map((layout) => ({
+      id: `panel-title-${layout.id}`,
+      text: panelTitleById[layout.id],
+      top: layout.top - (compact ? 27 : 31),
+      left: compact ? 44 : 52,
+      padding: 0,
+      textStyle: {
+        color: colors.text,
+        fontSize: compact ? 11 : 12,
+        fontWeight: 600,
+      },
+    })),
+    legend: [
+      {
+        id: 'legend-price',
+        top: 0,
+        left: 0,
+        right: 8,
+        type: 'scroll',
+        textStyle: { color: colors.muted, fontSize: 11 },
+        data: mainLegendData,
+      },
+      ...subLayouts.map((layout) => ({
+        id: `legend-${layout.id}`,
+        top: layout.top - (compact ? 31 : 35),
+        left: compact ? 132 : 174,
+        right: 8,
+        type: 'scroll' as const,
+        itemWidth: compact ? 14 : 18,
+        itemHeight: 8,
+        textStyle: { color: colors.muted, fontSize: compact ? 9 : 10 },
+        data: panelLegendDataById[layout.id],
+      })),
+    ],
     axisPointer: {
       link: [{ xAxisIndex: 'all' }],
       label: { backgroundColor: colors.border },
@@ -875,9 +936,18 @@ export function buildTechnicalChartOption(input: BuildTechnicalChartOptionInput)
           `<div>${labels.open} ${formatTooltipValue(item.open)} / ${labels.close} ${formatTooltipValue(item.close)} / ${labels.low} ${formatTooltipValue(item.low)} / ${labels.high} ${formatTooltipValue(item.high)}</div>`,
         );
         if (visible.ma) {
-          rows.push(
-            `<div>${labels.ma5} ${formatTooltipValue(item.ma5)} · ${labels.ma10} ${formatTooltipValue(item.ma10)} · ${labels.ma20} ${formatTooltipValue(item.ma20)}</div>`,
-          );
+          const maValues = [
+            [labels.ma5, item.ma5],
+            [labels.ma10, item.ma10],
+            [labels.ma20, item.ma20],
+            [labels.ma30, item.ma30],
+            [labels.ma60, item.ma60],
+            [labels.ma90, item.ma90],
+            [labels.ma120, item.ma120],
+            [labels.ma250, item.ma250],
+          ];
+          rows.push(`<div>${maValues.slice(0, 4).map(([label, value]) => `${label} ${formatTooltipValue(value as number | null | undefined)}`).join(' · ')}</div>`);
+          rows.push(`<div>${maValues.slice(4).map(([label, value]) => `${label} ${formatTooltipValue(value as number | null | undefined)}`).join(' · ')}</div>`);
         }
         if (visible.boll && !compact) {
           rows.push(

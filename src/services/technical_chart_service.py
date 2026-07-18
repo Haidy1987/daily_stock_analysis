@@ -18,6 +18,7 @@ from src.services.technical_indicators import (
     CALCULATION_VERSION,
     CORE_INDICATOR_GROUPS,
     DEFAULT_CORE_INDICATORS,
+    MA_PERIODS,
     build_support_resistance_summary,
     calculate_technical_indicators,
     normalize_ohlcv_frame,
@@ -25,15 +26,16 @@ from src.services.technical_indicators import (
 
 logger = logging.getLogger(__name__)
 
-# Extra bars beyond display_days for EMA/RSI/BOLL warmup (contract ≥ 60).
+# Baseline extra bars beyond display_days for EMA/RSI/BOLL warmup (contract ≥ 60).
 # Warmup counts in the *target* period (daily / weekly / monthly bars).
 WARMUP_BARS = 60
+MA_WARMUP_BARS = max(MA_PERIODS)
 MIN_DAYS = 60
 MAX_DAYS = 250
 DEFAULT_DAYS = 120
 SUPPORTED_PERIODS = frozenset({"daily", "weekly", "monthly"})
 # Soft cap on daily prefetch for weekly/monthly (partial + warning when hit).
-MAX_DAILY_FETCH_BARS = 5000
+MAX_DAILY_FETCH_BARS = 7000
 
 OHLCV_ITEM_FIELDS = (
     "date",
@@ -123,11 +125,12 @@ class TechnicalChartService:
             )
 
         groups = parse_indicator_groups(indicators)
-        calculation_bars = days + WARMUP_BARS
+        warmup_bars = max(WARMUP_BARS, MA_WARMUP_BARS if "ma" in groups else 0)
+        calculation_bars = days + warmup_bars
         daily_fetch_days, fetch_capped = estimate_daily_bars_for_period(
             period,
             days,
-            warmup_bars=WARMUP_BARS,
+            warmup_bars=warmup_bars,
             max_daily_bars=MAX_DAILY_FETCH_BARS,
         )
 

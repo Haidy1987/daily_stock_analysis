@@ -312,7 +312,7 @@ describe('TechnicalChartPage', () => {
     expect(technicalChartApi.get).toHaveBeenCalledWith(
       expect.objectContaining({
         period: 'weekly',
-        days: 120,
+        days: 60,
         indicators: 'ma',
       }),
     );
@@ -320,7 +320,7 @@ describe('TechnicalChartPage', () => {
     await waitFor(() => {
       const query = screen.getByTestId('location-probe').textContent || '';
       expect(query).toContain('period=weekly');
-      expect(query).toContain('days=120');
+      expect(query).toContain('days=60');
       expect(query).toContain('indicators=ma');
     });
   });
@@ -336,6 +336,21 @@ describe('TechnicalChartPage', () => {
       const query = screen.getByTestId('location-probe').textContent || '';
       expect(query).toContain('period=daily');
     });
+  });
+
+  it('defaults to 60 days with every indicator enabled', async () => {
+    renderPage('/technical-chart?stock=600519');
+
+    await waitFor(() => expect(technicalChartApi.get).toHaveBeenCalled());
+    expect(technicalChartApi.get).toHaveBeenCalledWith(
+      expect.objectContaining({
+        days: 60,
+        indicators: expect.stringContaining('bias'),
+      }),
+    );
+    for (const label of ['BOLL', 'MACD', 'RSI', 'KDJ', 'CCI', 'BIAS']) {
+      expect(screen.getByRole('button', { name: label })).toHaveAttribute('aria-pressed', 'true');
+    }
   });
 
   it('switches period and refetches with the new value', async () => {
@@ -403,20 +418,22 @@ describe('TechnicalChartPage', () => {
     expect(screen.getByRole('button', { name: '支撑压力' })).toHaveAttribute('aria-pressed', 'false');
   });
 
-  it('keeps a single subplot on compact viewports when enabling another', async () => {
+  it('keeps multiple subplots on compact viewports when enabling another', async () => {
     compactState.value = true;
     renderPage('/technical-chart?stock=600519&indicators=ma,boll,volume,macd,support_resistance');
 
-    expect(await screen.findByText('副图（单选）')).toBeInTheDocument();
+    expect(await screen.findByText('副图')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'RSI' }));
 
     await waitFor(() => {
       const query = screen.getByTestId('location-probe').textContent || '';
       expect(query).toContain('rsi');
-      expect(query).not.toContain('macd');
+      expect(query).toContain('macd');
+      expect(query).toContain('boll');
     });
     expect(screen.getByRole('button', { name: 'RSI' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('button', { name: 'MACD' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: 'MACD' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'BOLL' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('renders accessible summary and data notes', async () => {
@@ -425,5 +442,15 @@ describe('TechnicalChartPage', () => {
     expect(await screen.findByTestId('technical-chart-accessible-summary')).toHaveTextContent('贵州茅台');
     expect(screen.getByTestId('technical-chart-data-notes')).toHaveTextContent('技术指标仅供信息参考');
     expect(screen.getByTestId('technical-chart-data-notes')).toHaveTextContent('technical-v1');
+  });
+
+  it('uses high-contrast theme colors for summary values', async () => {
+    renderPage('/technical-chart?stock=600519');
+
+    const summaryGrid = await screen.findByTestId('technical-chart-summary-grid');
+    expect(summaryGrid).toHaveTextContent('1810.00');
+    expect(screen.getByText('1810.00')).toHaveClass('text-danger');
+    expect(screen.getByText('+1.25%')).toHaveClass('text-danger');
+    expect(screen.getByText('1')).toHaveClass('text-foreground');
   });
 });

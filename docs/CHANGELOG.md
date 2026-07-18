@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+
+- [改进] 技术图表 MA 均线扩展为 MA5/10/20/30/60/90/120/250，并按最长周期预取历史数据，确保 60 日视图也能绘制长期均线。
+- [改进] 技术图表默认展示 60 日与全部指标，增强深色主题摘要卡对比度，为每个副图增加独立标题和图例，并将 BOLL 优化为 K 线叠加彩色上中下轨的独立面板
+- [修复] 修复账户页进入时重复刷新全局认证状态导致页面长时间显示加载圈的问题
+- [测试] 为账户页增加认证状态不重复刷新的回归测试
+- [改进] 技术图表将 BOLL 拆为独立副图，并取消窄屏副图单选限制，支持多指标纵向排列与 URL 完整保留
+- [修复] 修复技术图表在 axisPointer.link + tooltip cross 场景下因显式 axisPointer: undefined 导致 ECharts 渲染崩溃的问题
 - [修复] 技术图表 dispose 清理异常不再覆盖真实的 init/setOption/resize 错误阶段
 - [修复] 修复部署更新后旧页面加载失效动态模块时直接进入页面错误状态的问题：lazy 路由增加一次 session 内自动刷新恢复
 - [修复] 修复技术图表 ECharts 渲染异常导致整个页面不可用的问题：图表区域局部降级并支持重新渲染

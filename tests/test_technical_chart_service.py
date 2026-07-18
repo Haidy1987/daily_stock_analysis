@@ -12,7 +12,8 @@ import pandas as pd
 from data_provider.base import DataFetchError
 from src.services.ohlcv_aggregation import aggregate_ohlcv, estimate_daily_bars_for_period
 from src.services.technical_chart_service import (
-    WARMUP_BARS,
+    MA_WARMUP_BARS,
+    MAX_DAILY_FETCH_BARS,
     TechnicalChartService,
     TechnicalChartSourceUnavailableError,
     TechnicalChartValidationError,
@@ -65,9 +66,12 @@ class TechnicalChartServiceTestCase(unittest.TestCase):
     @patch("data_provider.base.DataFetcherManager")
     def test_weekly_aggregates_then_recomputes_indicators(self, mock_manager_cls: MagicMock) -> None:
         manager = mock_manager_cls.return_value
-        # Enough daily sessions for 60 weekly display bars + warmup estimate.
+        # Enough daily sessions for 60 weekly display bars + MA250 warmup.
         daily_n, _ = estimate_daily_bars_for_period(
-            "weekly", 60, warmup_bars=WARMUP_BARS, max_daily_bars=5000
+            "weekly",
+            60,
+            warmup_bars=MA_WARMUP_BARS,
+            max_daily_bars=MAX_DAILY_FETCH_BARS,
         )
         manager.get_daily_data.return_value = (_ohlcv(daily_n), "akshare")
         manager.get_stock_name.return_value = "贵州茅台"
@@ -136,7 +140,7 @@ class TechnicalChartServiceTestCase(unittest.TestCase):
     @patch("data_provider.base.DataFetcherManager")
     def test_full_chart_trims_warmup_and_has_fields(self, mock_manager_cls: MagicMock) -> None:
         manager = mock_manager_cls.return_value
-        manager.get_daily_data.return_value = (_ohlcv(200), "akshare")
+        manager.get_daily_data.return_value = (_ohlcv(400), "akshare")
         manager.get_stock_name.return_value = "贵州茅台"
 
         result = self.service.get_technical_chart("600519", days=120)
@@ -146,13 +150,14 @@ class TechnicalChartServiceTestCase(unittest.TestCase):
         self.assertEqual(len(result["items"]), 120)
         dates = [item["date"] for item in result["items"]]
         self.assertEqual(dates, sorted(dates))
-        # Warmup must not leak: fetch asked for days+warmup
+        # Warmup must not leak: MA250 asks for a full long-window pre-roll.
         args, kwargs = manager.get_daily_data.call_args
-        self.assertEqual(kwargs.get("days") or args[1], 120 + WARMUP_BARS)
+        self.assertEqual(kwargs.get("days") or args[1], 120 + MA_WARMUP_BARS)
 
         sample = result["items"][-1]
         for field in (
-            "ma5", "macd_dif", "rsi6", "boll_mid", "kdj_k", "cci", "bias5", "volume_ratio"
+            "ma5", "ma30", "ma60", "ma90", "ma120", "ma250",
+            "macd_dif", "rsi6", "boll_mid", "kdj_k", "cci", "bias5", "volume_ratio"
         ):
             self.assertIn(field, sample)
             self.assertIsNotNone(sample[field])

@@ -34,11 +34,9 @@ import {
   TechnicalPriceVolumeChart,
   TECHNICAL_CHART_MOBILE_DEFAULT_PANELS,
   TECHNICAL_CHART_PC_DEFAULT_PANELS,
-  enforceSingleSubplot,
   parseVisiblePanels,
   panelsToIndicatorsCsv,
   togglePanel,
-  SUBPLOT_TOGGLE_KEYS,
   type TechnicalChartVisiblePanels,
 } from '../components/technical-chart';
 import { useUiLanguage } from '../contexts/UiLanguageContext';
@@ -48,12 +46,12 @@ import type { UiTextKey } from '../i18n/uiText';
 
 const CORE_TOGGLE_KEYS: Array<{ key: keyof TechnicalChartVisiblePanels; labelKey: UiTextKey }> = [
   { key: 'ma', labelKey: 'technicalChart.toggle.ma' },
-  { key: 'boll', labelKey: 'technicalChart.toggle.boll' },
   { key: 'volume', labelKey: 'technicalChart.toggle.volume' },
   { key: 'supportResistance', labelKey: 'technicalChart.toggle.supportResistance' },
 ];
 
 const SUBPLOT_TOGGLE_ITEMS: Array<{ key: keyof TechnicalChartVisiblePanels; labelKey: UiTextKey }> = [
+  { key: 'boll', labelKey: 'technicalChart.toggle.boll' },
   { key: 'macd', labelKey: 'technicalChart.toggle.macd' },
   { key: 'rsi', labelKey: 'technicalChart.toggle.rsi' },
   { key: 'kdj', labelKey: 'technicalChart.toggle.kdj' },
@@ -130,11 +128,7 @@ const TechnicalChartPage: React.FC = () => {
       next.set('indicators', defaultIndicatorsCsv);
       changed = true;
     } else {
-      let normalized = parseTechnicalChartIndicators(indicatorsRaw);
-      if (isCompact) {
-        const enforced = enforceSingleSubplot(parseVisiblePanels(normalized, defaultPanels));
-        normalized = panelsToIndicatorsCsv(enforced) || defaultIndicatorsCsv;
-      }
+      const normalized = parseTechnicalChartIndicators(indicatorsRaw);
       if (normalized !== indicatorsRaw) {
         next.set('indicators', normalized);
         changed = true;
@@ -147,9 +141,7 @@ const TechnicalChartPage: React.FC = () => {
   }, [
     days,
     defaultIndicatorsCsv,
-    defaultPanels,
     indicatorsRaw,
-    isCompact,
     period,
     searchParams,
     setSearchParams,
@@ -278,14 +270,11 @@ const TechnicalChartPage: React.FC = () => {
 
   const handleTogglePanel = useCallback(
     (key: keyof TechnicalChartVisiblePanels) => {
-      let next = togglePanel(visiblePanels, key);
-      if (isCompact && SUBPLOT_TOGGLE_KEYS.includes(key)) {
-        next = enforceSingleSubplot(next, key);
-      }
+      const next = togglePanel(visiblePanels, key);
       const nextIndicators = panelsToIndicatorsCsv(next) || defaultIndicatorsCsv;
       syncUrl({ indicators: nextIndicators });
     },
-    [defaultIndicatorsCsv, isCompact, syncUrl, visiblePanels],
+    [defaultIndicatorsCsv, syncUrl, visiblePanels],
   );
 
   const formatWarning = useCallback((code: string) => {
@@ -309,6 +298,12 @@ const TechnicalChartPage: React.FC = () => {
       points: chart.items.length,
     })
     : '';
+  const changePercent = summary?.latestChangePercent;
+  const marketValueTone = changePercent != null && changePercent > 0
+    ? 'text-danger'
+    : changePercent != null && changePercent < 0
+      ? 'text-success'
+      : 'text-foreground';
 
   return (
     <AppPage>
@@ -384,7 +379,7 @@ const TechnicalChartPage: React.FC = () => {
           </div>
           <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 sm:flex-wrap sm:overflow-visible">
             <span className="shrink-0 self-center text-xs text-secondary-text">
-              {isCompact ? t('technicalChart.mobileSubplotHint') : t('technicalChart.subplotLabel')}
+              {t('technicalChart.subplotLabel')}
             </span>
             {SUBPLOT_TOGGLE_ITEMS.map(({ key, labelKey }) => (
               <Button
@@ -487,31 +482,36 @@ const TechnicalChartPage: React.FC = () => {
                 />
               ) : null}
 
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <div>
-                  <div className="text-xs text-secondary-text">{t('technicalChart.summary.stock')}</div>
-                  <div className="text-base font-semibold text-primary-text">
+              <div
+                className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
+                data-testid="technical-chart-summary-grid"
+              >
+                <div className="rounded-xl border border-border/80 bg-background/45 px-4 py-3 shadow-sm">
+                  <div className="text-xs font-medium text-secondary-text">{t('technicalChart.summary.stock')}</div>
+                  <div className="mt-1 text-base font-semibold text-foreground">
                     {chart.stockName || '—'} ({chart.stockCode})
                   </div>
                 </div>
-                <div>
-                  <div className="text-xs text-secondary-text">{t('technicalChart.summary.latestClose')}</div>
-                  <div className="text-base font-semibold text-primary-text">
+                <div className="rounded-xl border border-border/80 bg-background/45 px-4 py-3 shadow-sm">
+                  <div className="text-xs font-medium text-secondary-text">{t('technicalChart.summary.latestClose')}</div>
+                  <div className={`mt-1 text-lg font-bold tabular-nums ${marketValueTone}`}>
                     {formatOptionalNumber(summary?.latestClose)}
                   </div>
                 </div>
-                <div>
-                  <div className="text-xs text-secondary-text">{t('technicalChart.summary.changePercent')}</div>
-                  <div className="text-base font-semibold text-primary-text">
+                <div className="rounded-xl border border-border/80 bg-background/45 px-4 py-3 shadow-sm">
+                  <div className="text-xs font-medium text-secondary-text">{t('technicalChart.summary.changePercent')}</div>
+                  <div className={`mt-1 text-lg font-bold tabular-nums ${marketValueTone}`}>
                     {formatSignedPercent(summary?.latestChangePercent)}
                   </div>
                 </div>
-                <div>
-                  <div className="text-xs text-secondary-text">{t('technicalChart.summary.dataPoints')}</div>
-                  <div className="text-base font-semibold text-primary-text">
+                <div className="rounded-xl border border-border/80 bg-background/45 px-4 py-3 shadow-sm">
+                  <div className="text-xs font-medium text-secondary-text">{t('technicalChart.summary.dataPoints')}</div>
+                  <div className="mt-1 text-lg font-bold tabular-nums text-foreground">
                     {chart.items.length}
-                    {lastItem?.date ? ` · ${lastItem.date}` : ''}
                   </div>
+                  {lastItem?.date ? (
+                    <div className="mt-0.5 text-xs text-secondary-text">{lastItem.date}</div>
+                  ) : null}
                 </div>
               </div>
 

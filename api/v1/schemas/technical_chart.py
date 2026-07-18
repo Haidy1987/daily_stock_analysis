@@ -33,6 +33,11 @@ class TechnicalChartItem(BaseModel):
     ma5: Optional[float] = None
     ma10: Optional[float] = None
     ma20: Optional[float] = None
+    ma30: Optional[float] = None
+    ma60: Optional[float] = None
+    ma90: Optional[float] = None
+    ma120: Optional[float] = None
+    ma250: Optional[float] = None
     volume_ratio: Optional[float] = None
     volume_status: Optional[str] = None
     macd_dif: Optional[float] = None

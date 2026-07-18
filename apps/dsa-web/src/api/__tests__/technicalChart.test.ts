@@ -11,6 +11,7 @@ import {
 
 describe('technicalChart query helpers', () => {
   it('accepts only allowed days values', () => {
+    expect(TECHNICAL_CHART_DEFAULT_DAYS).toBe(60);
     expect(parseTechnicalChartDays('60')).toBe(60);
     expect(parseTechnicalChartDays('120')).toBe(120);
     expect(parseTechnicalChartDays('250')).toBe(250);
@@ -36,11 +37,13 @@ describe('technicalChart query helpers', () => {
     })).toBe('/technical-chart?stock=600519&period=weekly&days=120&indicators=ma%2Cvolume');
   });
 
-  it('filters unknown indicators and falls back to the PC default set', () => {
+  it('filters unknown indicators and falls back to the complete default set', () => {
     expect(parseTechnicalChartIndicators('ma,foo,rsi')).toBe('ma,rsi');
     expect(parseTechnicalChartIndicators('foo,bar')).toBe(TECHNICAL_CHART_DEFAULT_INDICATORS);
     expect(parseTechnicalChartIndicators(null)).toBe(TECHNICAL_CHART_DEFAULT_INDICATORS);
     expect(TECHNICAL_CHART_DEFAULT_INDICATORS).toContain('macd');
-    expect(TECHNICAL_CHART_DEFAULT_INDICATORS).not.toContain('kdj');
+    expect(TECHNICAL_CHART_DEFAULT_INDICATORS).toContain('kdj');
+    expect(TECHNICAL_CHART_DEFAULT_INDICATORS).toContain('cci');
+    expect(TECHNICAL_CHART_DEFAULT_INDICATORS).toContain('bias');
   });
 });

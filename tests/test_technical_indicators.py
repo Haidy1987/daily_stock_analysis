@@ -99,7 +99,7 @@ class NormalizeOhlcvTestCase(unittest.TestCase):
 
 class CoreIndicatorsTestCase(unittest.TestCase):
     def test_ma_full_window_null_before_period(self) -> None:
-        df = _sample_ohlcv(25)
+        df = _sample_ohlcv(260)
         out = calculate_technical_indicators(df, indicators={"ma"})
         self.assertTrue(pd.isna(out["ma5"].iloc[3]))
         self.assertFalse(pd.isna(out["ma5"].iloc[4]))
@@ -107,6 +107,12 @@ class CoreIndicatorsTestCase(unittest.TestCase):
         self.assertFalse(pd.isna(out["ma20"].iloc[19]))
         expected = float(df["close"].iloc[0:5].mean())
         self.assertAlmostEqual(float(out["ma5"].iloc[4]), expected)
+        self.assertTrue(pd.isna(out["ma250"].iloc[248]))
+        self.assertFalse(pd.isna(out["ma250"].iloc[249]))
+        self.assertAlmostEqual(
+            float(out["ma250"].iloc[249]),
+            float(df["close"].iloc[0:250].mean()),
+        )
 
     def test_macd_bar_formula_and_warmup_null(self) -> None:
         df = _sample_ohlcv(40)
@@ -382,7 +388,7 @@ class FullIndicatorSetTestCase(unittest.TestCase):
         out = calculate_technical_indicators(df)
         required = [
             "date", "open", "high", "low", "close", "volume",
-            "ma5", "ma10", "ma20",
+            "ma5", "ma10", "ma20", "ma30", "ma60", "ma90", "ma120", "ma250",
             "macd_dif", "macd_dea", "macd_bar",
             "rsi6", "rsi12", "rsi24",
             "boll_upper", "boll_mid", "boll_lower", "boll_bandwidth", "boll_position",

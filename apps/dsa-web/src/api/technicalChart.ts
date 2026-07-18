@@ -15,28 +15,24 @@ export const TECHNICAL_CHART_INDICATOR_GROUPS = [
 
 export type TechnicalChartIndicatorGroup = (typeof TECHNICAL_CHART_INDICATOR_GROUPS)[number];
 
-/** PC default visible panels (KDJ/CCI/BIAS remain opt-in). */
+/** Default to the complete technical-chart workspace on every viewport. */
 export const TECHNICAL_CHART_DEFAULT_INDICATORS = [
   'ma',
   'boll',
   'volume',
   'macd',
   'rsi',
+  'kdj',
+  'cci',
+  'bias',
   'support_resistance',
 ].join(',');
 
-/** Mobile default: main + volume + one subplot (MACD). */
-export const TECHNICAL_CHART_MOBILE_DEFAULT_INDICATORS = [
-  'ma',
-  'boll',
-  'volume',
-  'macd',
-  'support_resistance',
-].join(',');
+export const TECHNICAL_CHART_MOBILE_DEFAULT_INDICATORS = TECHNICAL_CHART_DEFAULT_INDICATORS;
 
 export const TECHNICAL_CHART_ALLOWED_DAYS = [60, 120, 250] as const;
 export type TechnicalChartDays = (typeof TECHNICAL_CHART_ALLOWED_DAYS)[number];
-export const TECHNICAL_CHART_DEFAULT_DAYS: TechnicalChartDays = 120;
+export const TECHNICAL_CHART_DEFAULT_DAYS: TechnicalChartDays = 60;
 
 export const TECHNICAL_CHART_ALLOWED_PERIODS = ['daily', 'weekly', 'monthly'] as const;
 export type TechnicalChartPeriod = (typeof TECHNICAL_CHART_ALLOWED_PERIODS)[number];
@@ -66,6 +62,11 @@ export interface TechnicalChartItem {
   ma5?: number | null;
   ma10?: number | null;
   ma20?: number | null;
+  ma30?: number | null;
+  ma60?: number | null;
+  ma90?: number | null;
+  ma120?: number | null;
+  ma250?: number | null;
   volumeRatio?: number | null;
   volumeStatus?: string | null;
   macdDif?: number | null;

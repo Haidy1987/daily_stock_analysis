@@ -24,7 +24,8 @@ MACD_FAST_PERIOD = 12
 MACD_SIGNAL_PERIOD = 9
 MACD_FIRST_VALID_INDEX = MACD_SLOW_PERIOD - 1
 
-MA_PERIODS = (5, 10, 20)
+MA_PERIODS = (5, 10, 20, 30, 60, 90, 120, 250)
+REPORT_MA_PERIODS = (5, 10, 20)
 RSI_PERIODS = (6, 12, 24)
 BIAS_PERIODS = (5, 10, 20)
 
@@ -51,7 +52,7 @@ VOLUME_STATUS_SHRINK_DOWN = "shrink_volume_down"
 VOLUME_STATUS_NORMAL = "normal"
 
 CORE_INDICATOR_GROUPS: Dict[str, tuple[str, ...]] = {
-    "ma": ("ma5", "ma10", "ma20"),
+    "ma": tuple(f"ma{period}" for period in MA_PERIODS),
     "macd": ("macd_dif", "macd_dea", "macd_bar"),
     "rsi": ("rsi6", "rsi12", "rsi24"),
     "bias": ("bias5", "bias10", "bias20"),
@@ -393,7 +394,7 @@ def compute_report_indicator_frame(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     close = pd.to_numeric(out["close"], errors="coerce")
 
-    for period in MA_PERIODS:
+    for period in REPORT_MA_PERIODS:
         out[f"MA{period}"] = close.rolling(window=period, min_periods=period).mean()
 
     dif, dea, bar = _compute_macd_raw(close)

@@ -3,7 +3,6 @@ import type { TechnicalChartResponse } from '../../../api/technicalChart';
 import {
   buildPanelIndexMap,
   buildTechnicalChartOption,
-  enforceSingleSubplot,
   formatTooltipValue,
   isUpBar,
   nullableSeriesValue,
@@ -27,6 +26,11 @@ const colors: TechnicalChartThemeColors = {
   ma5: 'ma5',
   ma10: 'ma10',
   ma20: 'ma20',
+  ma30: 'ma30',
+  ma60: 'ma60',
+  ma90: 'ma90',
+  ma120: 'ma120',
+  ma250: 'ma250',
   bollUpper: 'bu',
   bollMid: 'bm',
   bollLower: 'bl',
@@ -55,6 +59,13 @@ function makeResponse(overrides: Partial<TechnicalChartResponse> = {}): Technica
         close: 105,
         volume: 1000,
         ma5: null,
+        ma10: null,
+        ma20: null,
+        ma30: null,
+        ma60: null,
+        ma90: null,
+        ma120: null,
+        ma250: null,
         macdDif: null,
         macdDea: null,
         macdBar: null,
@@ -81,6 +92,11 @@ function makeResponse(overrides: Partial<TechnicalChartResponse> = {}): Technica
         ma5: 103,
         ma10: null,
         ma20: null,
+        ma30: 106,
+        ma60: 107,
+        ma90: 108,
+        ma120: 109,
+        ma250: 110,
         bollUpper: 110,
         bollMid: 105,
         bollLower: 100,
@@ -148,7 +164,7 @@ describe('nullableSeriesValue / formatTooltipValue', () => {
 describe('parseVisiblePanels / panelsToIndicatorsCsv', () => {
   it('uses PC defaults when indicators are empty', () => {
     expect(parseVisiblePanels('')).toEqual(TECHNICAL_CHART_PC_DEFAULT_PANELS);
-    expect(parseVisiblePanels(null).kdj).toBe(false);
+    expect(parseVisiblePanels(null).kdj).toBe(true);
     expect(parseVisiblePanels(null).macd).toBe(true);
   });
 
@@ -170,22 +186,8 @@ describe('parseVisiblePanels / panelsToIndicatorsCsv', () => {
 
   it('toggles a panel independently', () => {
     const next = togglePanel(TECHNICAL_CHART_PC_DEFAULT_PANELS, 'kdj');
-    expect(next.kdj).toBe(true);
+    expect(next.kdj).toBe(false);
     expect(next.macd).toBe(true);
-  });
-
-  it('enforces a single subplot panel', () => {
-    const next = enforceSingleSubplot(
-      {
-        ...TECHNICAL_CHART_PC_DEFAULT_PANELS,
-        macd: true,
-        rsi: true,
-        kdj: false,
-      },
-      'rsi',
-    );
-    expect(next.rsi).toBe(true);
-    expect(next.macd).toBe(false);
   });
 });
 
@@ -194,20 +196,29 @@ describe('buildPanelIndexMap', () => {
     const withVolume = buildPanelIndexMap({
       ...TECHNICAL_CHART_PC_DEFAULT_PANELS,
       volume: true,
+      boll: true,
       macd: true,
       rsi: true,
       kdj: false,
     });
-    expect(withVolume).toMatchObject({ price: 0, volume: 1, macd: 2, rsi: 3, kdj: undefined });
+    expect(withVolume).toMatchObject({
+      price: 0,
+      volume: 1,
+      boll: 2,
+      macd: 3,
+      rsi: 4,
+      kdj: undefined,
+    });
 
     const withoutVolume = buildPanelIndexMap({
       ...TECHNICAL_CHART_PC_DEFAULT_PANELS,
       volume: false,
+      boll: false,
       macd: true,
       rsi: true,
       kdj: false,
     });
-    expect(withoutVolume).toMatchObject({ price: 0, volume: undefined, macd: 1, rsi: 2 });
+    expect(withoutVolume).toMatchObject({ price: 0, volume: undefined, boll: undefined, macd: 1, rsi: 2 });
   });
 });
 
@@ -231,6 +242,10 @@ describe('buildTechnicalChartOption', () => {
 
     const ma5 = series.find((item) => item.name === 'MA5') as { data: Array<number | null> };
     expect(ma5.data).toEqual([null, 103]);
+    expect(series.filter((item) => /^MA(5|10|20|30|60|90|120|250)$/.test(String(item.name))))
+      .toHaveLength(8);
+    const ma250 = series.find((item) => item.name === 'MA250') as { data: Array<number | null> };
+    expect(ma250.data).toEqual([null, 110]);
 
     const volume = series.find((item) => item.name === 'Vol') as {
       data: Array<{ value: number | null; itemStyle: { color: string } }>;
@@ -244,6 +259,146 @@ describe('buildTechnicalChartOption', () => {
 
     const markYs = (candle.markLine?.data || []).map((row) => row.yAxis).sort((a, b) => a - b);
     expect(markYs).toEqual([90, 95, 110]);
+  });
+
+  it('places BOLL on an independent subplot (not the main price panel)', () => {
+    const option = buildTechnicalChartOption({
+      response: makeResponse(),
+      colors,
+      visible: {
+        ma: true,
+        boll: true,
+        volume: false,
+        macd: false,
+        rsi: false,
+        kdj: false,
+        cci: false,
+        bias: false,
+        supportResistance: false,
+      },
+    });
+
+    expect((option.grid as unknown[]).length).toBe(2);
+
+    const series = option.series as Array<{
+      name?: string;
+      type?: string;
+      xAxisIndex?: number;
+      yAxisIndex?: number;
+      lineStyle?: { color?: string; type?: string; width?: number };
+    }>;
+    const candle = series.find((item) => item.type === 'candlestick');
+    expect(candle?.xAxisIndex).toBe(0);
+    expect(candle?.yAxisIndex).toBe(0);
+
+    const bollUpper = series.find((item) => item.name === 'BOLL.U');
+    const bollMid = series.find((item) => item.name === 'BOLL.M');
+    const bollLower = series.find((item) => item.name === 'BOLL.L');
+    expect(bollUpper).toMatchObject({ xAxisIndex: 1, yAxisIndex: 1 });
+    expect(bollMid).toMatchObject({ xAxisIndex: 1, yAxisIndex: 1 });
+    expect(bollLower).toMatchObject({ xAxisIndex: 1, yAxisIndex: 1 });
+    expect(series.filter((item) => item.type === 'candlestick')).toHaveLength(2);
+    expect(series.find((item) => item.name === 'K · BOLL')).toMatchObject({
+      type: 'candlestick',
+      xAxisIndex: 1,
+      yAxisIndex: 1,
+    });
+    expect(bollUpper?.lineStyle).toMatchObject({ color: colors.bollUpper, type: 'solid' });
+    expect(bollMid?.lineStyle).toMatchObject({ color: colors.bollMid, type: 'solid' });
+    expect(bollLower?.lineStyle).toMatchObject({ color: colors.bollLower, type: 'solid' });
+
+    const titles = option.title as Array<{ text?: string }>;
+    expect(titles.map((title) => title.text)).toEqual(['BOLL (20, 2)']);
+
+    const priceSeriesNames = series
+      .filter((item) => item.xAxisIndex === 0)
+      .map((item) => item.name);
+    expect(priceSeriesNames).not.toContain('BOLL.U');
+    expect(priceSeriesNames).not.toContain('BOLL.M');
+    expect(priceSeriesNames).not.toContain('BOLL.L');
+  });
+
+  it('keeps volume, BOLL and MACD on three independent panels', () => {
+    const option = buildTechnicalChartOption({
+      response: makeResponse(),
+      colors,
+      visible: {
+        ma: false,
+        boll: true,
+        volume: true,
+        macd: true,
+        rsi: false,
+        kdj: false,
+        cci: false,
+        bias: false,
+        supportResistance: false,
+      },
+    });
+
+    expect((option.grid as unknown[]).length).toBe(4);
+    const series = option.series as Array<{ name?: string; xAxisIndex?: number; yAxisIndex?: number }>;
+    expect(series.find((item) => item.name === 'Vol')).toMatchObject({ xAxisIndex: 1, yAxisIndex: 1 });
+    expect(series.find((item) => item.name === 'BOLL.M')).toMatchObject({ xAxisIndex: 2, yAxisIndex: 2 });
+    expect(series.find((item) => item.name === 'DIF')).toMatchObject({ xAxisIndex: 3, yAxisIndex: 3 });
+
+    const yAxis = option.yAxis as Array<{ gridIndex: number }>;
+    expect(yAxis.map((axis) => axis.gridIndex)).toEqual([0, 1, 2, 3]);
+
+    const titles = option.title as Array<{ text?: string }>;
+    expect(titles.map((title) => title.text)).toEqual([
+      'Vol',
+      'BOLL (20, 2)',
+      'MACD (12, 26, 9)',
+    ]);
+  });
+
+  it('gives each oscillator its own panel indexes and grows chart height', () => {
+    const visibleAll = {
+      ma: false,
+      boll: true,
+      volume: false,
+      macd: true,
+      rsi: true,
+      kdj: true,
+      cci: true,
+      bias: true,
+      supportResistance: false,
+    };
+    const option = buildTechnicalChartOption({
+      response: makeResponse(),
+      colors,
+      visible: visibleAll,
+    });
+
+    const series = option.series as Array<{ name?: string; xAxisIndex?: number; yAxisIndex?: number }>;
+    const bollAxis = series.find((item) => item.name === 'BOLL.M')?.xAxisIndex;
+    const macdAxis = series.find((item) => item.name === 'DIF')?.xAxisIndex;
+    const rsiAxis = series.find((item) => item.name === 'RSI6')?.xAxisIndex;
+    const kdjAxis = series.find((item) => item.name === 'KDJ.K')?.xAxisIndex;
+    const cciAxis = series.find((item) => item.name === 'CCI')?.xAxisIndex;
+    const biasAxis = series.find((item) => item.name === 'BIAS5')?.xAxisIndex;
+
+    expect([bollAxis, macdAxis, rsiAxis, kdjAxis, cciAxis, biasAxis]).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(new Set([bollAxis, macdAxis, rsiAxis, kdjAxis, cciAxis, biasAxis]).size).toBe(6);
+    expect((option.grid as unknown[]).length).toBe(7);
+    const titles = option.title as Array<{ text?: string }>;
+    expect(titles.map((title) => title.text)).toEqual([
+      'BOLL (20, 2)',
+      'MACD (12, 26, 9)',
+      'RSI (6, 12, 24)',
+      'KDJ (9, 3, 3)',
+      'CCI (14)',
+      'BIAS (5, 10, 20)',
+    ]);
+
+    const heightAll = estimateTechnicalChartHeight(visibleAll);
+    const heightFewer = estimateTechnicalChartHeight({
+      ...visibleAll,
+      kdj: false,
+      cci: false,
+      bias: false,
+    });
+    expect(heightAll).toBeGreaterThan(heightFewer);
   });
 
   it('maps MACD/RSI/KDJ/CCI/BIAS with independent axis indexes and reference lines', () => {
@@ -351,7 +506,7 @@ describe('buildTechnicalChartOption', () => {
     });
     const series = option.series as Array<{ type?: string }>;
     expect(series.some((item) => item.type === 'candlestick')).toBe(true);
-    expect((option.grid as unknown[]).length).toBe(7);
+    expect((option.grid as unknown[]).length).toBe(8);
   });
 
   it('handles empty items and all-null indicator columns', () => {
@@ -412,5 +567,56 @@ describe('buildTechnicalChartOption', () => {
     });
     expect(typeof option.tooltip).toBe('object');
     expect((option.tooltip as { position?: unknown }).position).toEqual(expect.any(Function));
+  });
+
+  it('omits axisPointer on the sole labeled xAxis (showLabel=true)', () => {
+    const option = buildTechnicalChartOption({
+      response: makeResponse(),
+      colors,
+      visible: {
+        ma: true,
+        boll: false,
+        volume: false,
+        macd: false,
+        rsi: false,
+        kdj: false,
+        cci: false,
+        bias: false,
+        supportResistance: false,
+      },
+    });
+    const xAxis = option.xAxis as Array<Record<string, unknown>>;
+    expect(xAxis).toHaveLength(1);
+    expect(Object.prototype.hasOwnProperty.call(xAxis[0], 'axisPointer')).toBe(false);
+  });
+
+  it('hides axisPointer labels on unlabeled axes and omits axisPointer on the last labeled axis', () => {
+    const option = buildTechnicalChartOption({
+      response: makeResponse(),
+      colors,
+      visible: {
+        ma: false,
+        boll: false,
+        volume: true,
+        macd: true,
+        rsi: true,
+        kdj: false,
+        cci: false,
+        bias: false,
+        supportResistance: false,
+      },
+    });
+    type AxisWithPointer = {
+      axisPointer?: { label?: { show?: boolean } };
+    };
+    const xAxis = option.xAxis as AxisWithPointer[];
+    expect(xAxis).toHaveLength(4);
+
+    // Price + volume + macd: showLabel=false → hide axisPointer labels
+    for (let i = 0; i < xAxis.length - 1; i += 1) {
+      expect(xAxis[i].axisPointer?.label?.show).toBe(false);
+    }
+    // Last subplot (rsi): showLabel=true → omit axisPointer entirely
+    expect(Object.prototype.hasOwnProperty.call(xAxis[xAxis.length - 1], 'axisPointer')).toBe(false);
   });
 });
