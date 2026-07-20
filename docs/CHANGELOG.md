@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 - [修复] 问股 Web 会话 ID 与后端 `web:{user_id}:` 前缀对齐，修复多用户场景下发送消息返回 `Session not found` 的问题。
+- [改进] 新增可选 Traefik Compose override，为已有 proxy 网络部署自动注册 HTTPS Web 路由。
+- [改进] Docker Compose 将 WebUI 运行时配置持久化到 `data/runtime.env`，发布同步继续保留用户 AI 配置。
 - [改进] 技术图表 MA 均线扩展为 MA5/10/20/30/60/90/120/250，并按最长周期预取历史数据，确保 60 日视图也能绘制长期均线。
 - [改进] 技术图表页面移除嵌套 main，并使用宽屏容器展示图表，充分利用侧边栏之外的可用宽度。
 - [改进] 技术图表页面采用固定 10px 外层边距并清除页面容器内外间距，进一步扩大图表可视宽度。

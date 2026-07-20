@@ -3,9 +3,10 @@
 # ===================================
 # 
 # 使用方式:
-#   定时模式: docker-compose -f ./docker/docker-compose.yml up -d
-#   FastAPI模式: docker-compose -f ./docker/docker-compose.yml up -d server
-#   同时启动: docker-compose -f ./docker/docker-compose.yml up -d analyzer server
+#   首次部署: cp .env data/runtime.env
+#   定时模式: docker compose --env-file .env -f ./docker/docker-compose.yml up -d
+#   FastAPI模式: docker compose --env-file .env -f ./docker/docker-compose.yml up -d server
+#   同时启动: docker compose --env-file .env -f ./docker/docker-compose.yml up -d analyzer server
 
 name: daily-stock-analysis
 version: '3.8'
@@ -16,10 +17,11 @@ x-common: &common
     dockerfile: docker/Dockerfile
   restart: unless-stopped
 
-  # 环境变量（从 .env 文件加载）。不要将 ../.env 作为单文件 volume 挂载到 /app/.env，
+  # 运行时配置从 data/runtime.env 加载并写回同一个数据卷文件。首次部署前执行
+  # `cp .env data/runtime.env`。不要将 ../.env 作为单文件 volume 挂载到 /app/.env，
   # 否则 Docker mount point 会阻止配置保存时的 os.replace 原子更新。
   env_file:
-    - ../.env
+    - ../data/runtime.env
 
   volumes:
     - ../data:/app/data
@@ -34,6 +36,8 @@ x-common: &common
 
   environment:
     - TZ=Asia/Shanghai
+    # WebUI/API 保存的运行时配置持久化在 data volume 中
+    - ENV_FILE=/app/data/runtime.env
 
     # Web/API service bind address (must be 0.0.0.0 inside container)
     - WEBUI_HOST=0.0.0.0

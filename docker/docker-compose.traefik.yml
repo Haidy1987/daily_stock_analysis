@@ -1,0 +1,19 @@
+# Optional Traefik override for deployments that already provide the external
+# `proxy` Docker network and a Traefik instance watching Docker labels.
+services:
+  server:
+    networks:
+      - default
+      - proxy
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: proxy
+      traefik.http.routers.dsa.rule: "Host(`${DSA_DOMAIN}`)"
+      traefik.http.routers.dsa.entrypoints: websecure
+      traefik.http.routers.dsa.tls: "true"
+      traefik.http.routers.dsa.tls.certresolver: letsencrypt
+      traefik.http.services.dsa.loadbalancer.server.port: "8000"
+
+networks:
+  proxy:
+    external: true

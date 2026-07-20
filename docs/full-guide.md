@@ -489,16 +489,21 @@ cd daily_stock_analysis
 cp .env.example .env
 vim .env  # 填入 API Key 和配置
 
+# 首次部署初始化运行时配置文件；后续发布不得覆盖 data/
+mkdir -p data
+cp .env data/runtime.env
+chmod 600 data/runtime.env
+
 # 3. 启动容器
-docker-compose -f ./docker/docker-compose.yml up -d server     # Web 服务模式（推荐，提供 API 与 WebUI）
-docker-compose -f ./docker/docker-compose.yml up -d analyzer   # 定时任务模式
-docker-compose -f ./docker/docker-compose.yml up -d            # 同时启动两种模式
+docker compose --env-file .env -f ./docker/docker-compose.yml up -d server     # Web 服务模式（推荐，提供 API 与 WebUI）
+docker compose --env-file .env -f ./docker/docker-compose.yml up -d analyzer   # 定时任务模式
+docker compose --env-file .env -f ./docker/docker-compose.yml up -d            # 同时启动两种模式
 
 # 4. 访问 WebUI
 # http://localhost:8000
 
 # 5. 查看日志
-docker-compose -f ./docker/docker-compose.yml logs -f server
+docker compose --env-file .env -f ./docker/docker-compose.yml logs -f server
 ```
 
 默认 Compose 为每个服务设置 `limits.memory: 1G`、`reservations.memory: 512M`。`512M` 仅建议用于轻量 Web/API、单股、低并发场景，并将 `MAX_WORKERS=1`；常规完整分析建议 `1G`，同时启动 `server + analyzer`、多股票、大盘复盘、新闻扩展、图片报告或 AlphaSift 建议 `2G+`。如果只能使用 `512M`，请避免同时启动两个服务并减少重型功能。
@@ -508,11 +513,17 @@ docker-compose -f ./docker/docker-compose.yml logs -f server
 如果你不打算在目标机器上保留源码，可以直接拉取官方镜像：
 
 ```bash
+# 首次部署初始化运行时配置；后续发布保留 data/runtime.env
+mkdir -p data
+cp .env data/runtime.env
+chmod 600 data/runtime.env
+
 # Web/API 模式
 docker pull zhulinsen/daily_stock_analysis:latest
 docker run -d \
   --name dsa-server \
-  --env-file .env \
+  --env-file data/runtime.env \
+  -e ENV_FILE=/app/data/runtime.env \
   -p 8000:8000 \
   -v "$(pwd)/data:/app/data" \
   -v "$(pwd)/logs:/app/logs" \
@@ -523,7 +534,8 @@ docker run -d \
 # 定时任务模式
 docker run -d \
   --name dsa-analyzer \
-  --env-file .env \
+  --env-file data/runtime.env \
+  -e ENV_FILE=/app/data/runtime.env \
   -v "$(pwd)/data:/app/data" \
   -v "$(pwd)/logs:/app/logs" \
   -v "$(pwd)/reports:/app/reports" \
@@ -536,9 +548,9 @@ docker run -d \
 
 | 命令 | 说明 | 端口 |
 |------|------|------|
-| `docker-compose -f ./docker/docker-compose.yml up -d server` | Web 服务模式，提供 API 与 WebUI | 8000 |
-| `docker-compose -f ./docker/docker-compose.yml up -d analyzer` | 定时任务模式，每日自动执行 | - |
-| `docker-compose -f ./docker/docker-compose.yml up -d` | 同时启动两种模式 | 8000 |
+| `docker compose --env-file .env -f ./docker/docker-compose.yml up -d server` | Web 服务模式，提供 API 与 WebUI | 8000 |
+| `docker compose --env-file .env -f ./docker/docker-compose.yml up -d analyzer` | 定时任务模式，每日自动执行 | - |
+| `docker compose --env-file .env -f ./docker/docker-compose.yml up -d` | 同时启动两种模式 | 8000 |
 
 ### Docker Compose 配置
 
@@ -553,9 +565,10 @@ x-common: &common
     dockerfile: docker/Dockerfile
   restart: unless-stopped
   env_file:
-    - ../.env
+    - ../data/runtime.env
   environment:
     - TZ=Asia/Shanghai
+    - ENV_FILE=/app/data/runtime.env
   volumes:
     - ../data:/app/data
     - ../logs:/app/logs
@@ -591,9 +604,9 @@ services:
   作用：把 `.env` 中的键值作为容器启动时的环境变量传入 Python 进程。
 - 运行时配置写入：不要把宿主机 `.env` 作为单文件 bind mount 覆盖容器内 `.env` 路径。Docker 会把单文件挂载目标作为 mount point，配置保存时的 `os.replace()` 原子更新可能失败并报 `Device or resource busy`，回退写入也可能受权限限制。
 
-默认 Compose 和 `docker run` 示例仅使用 `env_file` / `--env-file` 注入启动配置，不再把宿主机 `.env` 单文件挂载进容器。WebUI 设置页会在当前活跃 `.env` 文件缺少某些键时展示启动注入的同名环境变量作为兜底，避免 Docker 用户误以为配置完全未读取；但“导出 `.env`”仍只导出当前活跃配置文件内容。
+默认 Compose 使用 `data/runtime.env` 作为容器启动和运行时配置文件；首次部署从根目录 `.env` 初始化该文件。根目录 `.env` 仅通过 `--env-file .env` 用于 Compose 解析端口、域名等部署变量。WebUI 设置页会在当前活跃配置文件缺少某些键时展示启动注入的同名环境变量作为兜底；但“导出 `.env`”仍只导出当前活跃配置文件内容。
 
-WebUI 中保存的运行时配置默认写入容器内部配置文件，不等同于回写宿主机 `.env`；删除或重建容器后仍以启动时注入的 `.env` 为准。若需要持久化运行时配置，请将写入目标放到可写数据卷中（例如通过 `ENV_FILE=/app/data/runtime.env` 指向 `data` volume 中的文件），不要使用 `.env` 单文件 bind mount。注意：如果启动时的 `env_file`、`--env-file`、`docker run -e` 或 Compose `environment:` 中仍保留同名旧值，容器重启时这些进程环境变量仍可能覆盖运行时文件中的保存值；要让 WebUI 保存值接管，请同步更新或移除启动环境中的同名覆盖。
+WebUI 保存的运行时配置直接写入挂载的数据卷文件 `/app/data/runtime.env`，容器删除、重建或发布更新后仍会保留。发布同步必须排除宿主机 `data/`，不要用根目录 `.env` 替换 `runtime.env`，也不要把根目录 `.env` 作为容器运行时 `env_file`，否则可能覆盖 WebUI 保存的 AI 配置。
 
 推荐同时映射这几个目录：
 
@@ -614,17 +627,17 @@ WebUI 中保存的运行时配置默认写入容器内部配置文件，不等�
 
 ```bash
 # 查看运行状态
-docker-compose -f ./docker/docker-compose.yml ps
+docker compose --env-file .env -f ./docker/docker-compose.yml ps
 
 # 查看日志
-docker-compose -f ./docker/docker-compose.yml logs -f server
+docker compose --env-file .env -f ./docker/docker-compose.yml logs -f server
 
 # 停止服务
-docker-compose -f ./docker/docker-compose.yml down
+docker compose --env-file .env -f ./docker/docker-compose.yml down
 
 # 重建镜像（代码更新后）
-docker-compose -f ./docker/docker-compose.yml build --no-cache
-docker-compose -f ./docker/docker-compose.yml up -d server
+docker compose --env-file .env -f ./docker/docker-compose.yml build --no-cache
+docker compose --env-file .env -f ./docker/docker-compose.yml up -d server
 ```
 
 ### 手动构建镜像

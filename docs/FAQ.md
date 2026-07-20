@@ -99,10 +99,11 @@
 2. **Docker 部署 / WebUI 系统设置**：
    - `--env-file .env` / Compose `env_file` 只会把宿主机 `.env` 作为启动环境变量注入容器，不会自动创建或回写容器内 `/app/.env`
    - WebUI 设置页会在当前活跃 `.env` 文件缺少某些键时展示启动注入的同名环境变量作为兜底；但“导出 `.env`”仍只导出当前活跃配置文件内容
-   - WebUI 保存后的 `STOCK_LIST`、`SCHEDULE_ENABLED`、`SCHEDULE_TIME`、`SCHEDULE_TIMES`、`SCHEDULE_RUN_IMMEDIATELY`、`RUN_IMMEDIATELY` 会写回容器内的 `.env`
-   - WebUI 保存后会触发当前进程的配置重载；运行中的读取路径会同步使用最新写回的 `.env`，例如定时任务会继续热读取保存后的 `STOCK_LIST`
+   - WebUI 保存后的 `STOCK_LIST`、`SCHEDULE_ENABLED`、`SCHEDULE_TIME`、`SCHEDULE_TIMES`、`SCHEDULE_RUN_IMMEDIATELY`、`RUN_IMMEDIATELY` 会写回当前活跃配置文件；Docker Compose 默认是数据卷中的 `/app/data/runtime.env`
+   - WebUI 保存后会触发当前进程的配置重载；运行中的读取路径会同步使用最新写回的运行时配置文件，例如定时任务会继续热读取保存后的 `STOCK_LIST`
    - 如果容器启动命令里传入了这些同名环境变量（如 `--env-file .env`、`docker run -e ...` 或 Compose `environment:`），后续重启时仍可能以启动环境变量为准；要让 WebUI 保存值接管，请同步更新或移除这些同名 override
-   - 如需持久化 WebUI 保存的配置，请将 `ENV_FILE` 指向 `/app/data/runtime.env` 等可写数据卷文件，不要把宿主机 `.env` 单文件挂载到 `/app/.env`
+   - Docker Compose 首次部署应执行 `cp .env data/runtime.env`，项目默认通过 `ENV_FILE=/app/data/runtime.env` 将 WebUI 保存的配置写入数据卷；后续发布不得覆盖 `data/`
+   - 不要把宿主机 `.env` 单文件挂载到 `/app/.env`，也不要把宿主机 `.env` 继续作为容器运行时 `env_file`，否则可能覆盖 WebUI 保存的 AI 配置
    - `SCHEDULE_ENABLED`、`SCHEDULE_TIME`、`SCHEDULE_TIMES` 保存后会让 WebUI/API/Desktop 长运行进程按新配置启停或重建 runtime scheduler
    - `SCHEDULE_RUN_IMMEDIATELY` 与 `RUN_IMMEDIATELY` 仍属于启动期/一次性运行配置，保存后不会立即触发一次分析
 3. **Docker 手工改 `.env` 后**：修改后仍建议重启容器
