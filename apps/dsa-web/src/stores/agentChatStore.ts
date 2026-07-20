@@ -8,9 +8,12 @@ import {
   isParsedApiError,
   type ParsedApiError,
 } from '../api/error';
-import { generateUUID } from '../utils/uuid';
-
-const STORAGE_KEY_SESSION = 'dsa_chat_session_id';
+import {
+  CHAT_SESSION_STORAGE_KEY,
+  createWebChatSessionId,
+  isWebChatSessionOwnedByUser,
+  resolveWebChatSessionId,
+} from '../utils/chatSessionId';
 
 export interface ProgressStep {
   type: string;
@@ -53,6 +56,7 @@ type StreamFailureEvent = {
   content?: string;
   error?: unknown;
   message?: unknown;
+  session_id?: string;
 };
 
 function getFirstMeaningfulStreamError(...candidates: Array<unknown>): unknown {
@@ -86,11 +90,25 @@ function getStreamFailureError(
   );
 }
 
+function readStoredSessionId(): string | null {
+  if (typeof localStorage === 'undefined') {
+    return null;
+  }
+  return localStorage.getItem(CHAT_SESSION_STORAGE_KEY);
+}
+
+function persistSessionId(sessionId: string): void {
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(CHAT_SESSION_STORAGE_KEY, sessionId);
+  }
+}
+
 interface AgentChatState {
   messages: Message[];
   loading: boolean;
   progressSteps: ProgressStep[];
   sessionId: string;
+  ownerUserId: number | null;
   sessions: ChatSessionItem[];
   sessionsLoading: boolean;
   chatError: ParsedApiError | null;
@@ -103,6 +121,7 @@ interface AgentChatState {
 interface AgentChatActions {
   setCurrentRoute: (path: string) => void;
   clearCompletionBadge: () => void;
+  syncOwnerUserId: (userId: number) => void;
   loadSessions: () => Promise<void>;
   loadInitialSession: () => Promise<void>;
   switchSession: (targetSessionId: string) => Promise<void>;
@@ -110,16 +129,12 @@ interface AgentChatActions {
   startStream: (payload: ChatStreamRequest, meta?: StreamMeta) => Promise<void>;
 }
 
-const getInitialSessionId = (): string =>
-  typeof localStorage !== 'undefined'
-    ? localStorage.getItem(STORAGE_KEY_SESSION) || generateUUID()
-    : generateUUID();
-
 export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set, get) => ({
   messages: [],
   loading: false,
   progressSteps: [],
-  sessionId: getInitialSessionId(),
+  sessionId: '',
+  ownerUserId: null,
   sessions: [],
   sessionsLoading: false,
   chatError: null,
@@ -131,6 +146,37 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
   setCurrentRoute: (path) => set({ currentRoute: path }),
 
   clearCompletionBadge: () => set({ completionBadge: false }),
+
+  syncOwnerUserId: (userId) => {
+    const { ownerUserId } = get();
+    if (ownerUserId === userId) {
+      return;
+    }
+
+    const sessionId = resolveWebChatSessionId(userId, readStoredSessionId());
+    persistSessionId(sessionId);
+
+    if (ownerUserId !== null) {
+      get().abortController?.abort();
+      set({
+        ownerUserId: userId,
+        sessionId,
+        messages: [],
+        sessions: [],
+        hasInitialLoad: false,
+        loading: false,
+        progressSteps: [],
+        chatError: null,
+        abortController: null,
+      });
+      return;
+    }
+
+    set({
+      ownerUserId: userId,
+      sessionId,
+    });
+  },
 
   loadSessions: async () => {
     set({ sessionsLoading: true });
@@ -145,35 +191,31 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
   },
 
   loadInitialSession: async () => {
-    const { hasInitialLoad } = get();
-    if (hasInitialLoad) return;
+    const { hasInitialLoad, ownerUserId } = get();
+    if (hasInitialLoad || ownerUserId === null) return;
     set({ hasInitialLoad: true, sessionsLoading: true });
 
     try {
       const sessionList = await agentApi.getChatSessions();
       set({ sessions: sessionList });
 
-      const savedId = localStorage.getItem(STORAGE_KEY_SESSION);
-      if (savedId) {
-        const sessionExists = sessionList.some((s) => s.session_id === savedId);
-        if (sessionExists) {
-          const msgs = await agentApi.getChatSessionMessages(savedId);
-          if (msgs.length > 0) {
-            set({
-              messages: msgs.map((m) => ({
-                id: m.id,
-                role: m.role,
-                content: m.content,
-              })),
-            });
-          }
-        } else {
-          const newId = generateUUID();
-          set({ sessionId: newId });
-          localStorage.setItem(STORAGE_KEY_SESSION, newId);
+      const savedId = readStoredSessionId();
+      const sessionId = resolveWebChatSessionId(ownerUserId, savedId);
+      set({ sessionId });
+      persistSessionId(sessionId);
+
+      const sessionExists = sessionList.some((s) => s.session_id === sessionId);
+      if (sessionExists) {
+        const msgs = await agentApi.getChatSessionMessages(sessionId);
+        if (msgs.length > 0) {
+          set({
+            messages: msgs.map((m) => ({
+              id: m.id,
+              role: m.role,
+              content: m.content,
+            })),
+          });
         }
-      } else {
-        localStorage.setItem(STORAGE_KEY_SESSION, get().sessionId);
       }
     } catch {
       // Ignore
@@ -183,8 +225,11 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
   },
 
   switchSession: async (targetSessionId) => {
-    const { sessionId, messages, abortController } = get();
+    const { sessionId, messages, abortController, ownerUserId } = get();
     if (targetSessionId === sessionId && messages.length > 0) return;
+    if (ownerUserId !== null && !isWebChatSessionOwnedByUser(targetSessionId, ownerUserId)) {
+      return;
+    }
 
     abortController?.abort();
     set({
@@ -195,7 +240,7 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
       chatError: null,
       abortController: null,
     });
-    localStorage.setItem(STORAGE_KEY_SESSION, targetSessionId);
+    persistSessionId(targetSessionId);
 
     try {
       const msgs = await agentApi.getChatSessionMessages(targetSessionId);
@@ -215,9 +260,13 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
   },
 
   startNewChat: () => {
-    // Abort any in-flight stream so the old request does not keep running
+    const { ownerUserId } = get();
+    if (ownerUserId === null) {
+      return;
+    }
+
     get().abortController?.abort();
-    const newId = generateUUID();
+    const newId = createWebChatSessionId(ownerUserId);
     set({
       sessionId: newId,
       messages: [],
@@ -226,18 +275,43 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
       chatError: null,
       abortController: null,
     });
-    localStorage.setItem(STORAGE_KEY_SESSION, newId);
+    persistSessionId(newId);
   },
 
   startStream: async (payload, meta) => {
     if (get().loading) return;
-    const { abortController: prevAc, sessionId: storeSessionId } = get();
+    const { abortController: prevAc, sessionId: storeSessionId, ownerUserId } = get();
+    if (ownerUserId === null) {
+      set({
+        chatError: createParsedApiError({
+          title: '会话未就绪',
+          message: '用户信息尚未加载完成，请稍后重试。',
+          rawMessage: 'Agent chat owner user id is not available yet.',
+          category: 'unknown',
+        }),
+      });
+      return;
+    }
+
     prevAc?.abort();
 
     const ac = new AbortController();
     set({ abortController: ac });
 
-    const streamSessionId = payload.session_id || storeSessionId;
+    const requestedSessionId = payload.session_id || storeSessionId;
+    const streamSessionId = isWebChatSessionOwnedByUser(requestedSessionId, ownerUserId)
+      ? requestedSessionId
+      : createWebChatSessionId(ownerUserId);
+    if (streamSessionId !== storeSessionId) {
+      set({ sessionId: streamSessionId });
+      persistSessionId(streamSessionId);
+    }
+
+    const streamPayload: ChatStreamRequest = {
+      ...payload,
+      session_id: streamSessionId,
+    };
+
     const skillNames = meta?.skillNames?.length
       ? meta.skillNames
       : [meta?.skillName ?? '通用'];
@@ -273,7 +347,7 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
     }));
 
     try {
-      const response = await agentApi.chatStream(payload, { signal: ac.signal });
+      const response = await agentApi.chatStream(streamPayload, { signal: ac.signal });
       const reader = response.body!.getReader();
       const decoder = new TextDecoder();
       let buf = '';
@@ -291,6 +365,13 @@ export const useAgentChatStore = create<AgentChatState & AgentChatActions>((set,
             throw getStreamFailureError(doneEvent, '大模型调用出错，请检查 API Key 配置');
           }
           finalContent = doneEvent.content ?? '';
+          if (
+            typeof doneEvent.session_id === 'string'
+            && isWebChatSessionOwnedByUser(doneEvent.session_id, ownerUserId)
+          ) {
+            set({ sessionId: doneEvent.session_id });
+            persistSessionId(doneEvent.session_id);
+          }
           return;
         }
 

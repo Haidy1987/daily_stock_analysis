@@ -180,6 +180,8 @@ def _current_user_dict(user: AuthUser | None) -> dict | None:
 
 def _get_auth_status_dict(request: Request | None = None) -> dict:
     """Helper to build consistent auth status response body."""
+    from src.auth import get_default_admin_user_id
+
     auth_enabled = is_auth_enabled()
     logged_in = False
     current_user = None
@@ -196,6 +198,12 @@ def _get_auth_status_dict(request: Request | None = None) -> dict:
     else:
         setup_state = "no_password"
 
+    effective_user_id = None
+    if not auth_enabled:
+        effective_user_id = get_default_admin_user_id(create_if_missing=True)
+    elif logged_in and current_user is not None:
+        effective_user_id = current_user["id"]
+
     return {
         "authEnabled": auth_enabled,
         "loggedIn": logged_in,
@@ -203,6 +211,7 @@ def _get_auth_status_dict(request: Request | None = None) -> dict:
         "passwordChangeable": is_password_changeable() if auth_enabled else False,
         "setupState": setup_state,
         "currentUser": current_user,
+        "effectiveUserId": effective_user_id,
     }
 
 

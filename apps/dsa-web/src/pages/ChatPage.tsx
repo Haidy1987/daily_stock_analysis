@@ -303,6 +303,7 @@ const ChatPage: React.FC = () => {
     sessions,
     sessionsLoading,
     chatError,
+    ownerUserId,
     loadSessions,
     loadInitialSession,
     switchSession,
@@ -381,8 +382,11 @@ const ChatPage: React.FC = () => {
   }, [clearCompletionBadge]);
 
   useEffect(() => {
+    if (ownerUserId === null) {
+      return;
+    }
     loadInitialSession();
-  }, [loadInitialSession]);
+  }, [ownerUserId, loadInitialSession]);
 
   useEffect(() => {
     agentApi.getSkills()

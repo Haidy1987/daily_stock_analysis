@@ -2,7 +2,7 @@ import type React from 'react';
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { createParsedApiError, getParsedApiError, type ParsedApiError } from '../api/error';
 import { authApi, type AuthUser } from '../api/auth';
-import { useStockPoolStore } from '../stores';
+import { useAgentChatStore, useStockPoolStore } from '../stores';
 
 type AuthContextValue = {
   authEnabled: boolean;
@@ -73,6 +73,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
       setCurrentUser(status.loggedIn ? nextUser : null);
+      const effectiveUserId = status.effectiveUserId ?? (status.loggedIn ? nextUser?.id : null);
+      if (effectiveUserId != null) {
+        useAgentChatStore.getState().syncOwnerUserId(effectiveUserId);
+      }
       if (status.authEnabled && !status.loggedIn) {
         useStockPoolStore.getState().resetDashboardState();
       }

@@ -14,6 +14,7 @@ export type AuthStatusResponse = {
   passwordChangeable?: boolean;
   setupState: 'enabled' | 'password_retained' | 'no_password';
   currentUser?: AuthUser | null;
+  effectiveUserId?: number | null;
 };
 
 export const authApi = {

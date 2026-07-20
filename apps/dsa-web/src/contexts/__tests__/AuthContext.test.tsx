@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApiError, createParsedApiError } from '../../api/error';
 import { AuthProvider, useAuth } from '../AuthContext';
 
-const { getStatus, getMe, login, changePassword, logout, logoutAll, resetDashboardState } = vi.hoisted(() => ({
+const { getStatus, getMe, login, changePassword, logout, logoutAll, resetDashboardState, syncOwnerUserId } = vi.hoisted(() => ({
   getStatus: vi.fn(),
   getMe: vi.fn(),
   login: vi.fn(),
@@ -11,6 +11,7 @@ const { getStatus, getMe, login, changePassword, logout, logoutAll, resetDashboa
   logout: vi.fn(),
   logoutAll: vi.fn(),
   resetDashboardState: vi.fn(),
+  syncOwnerUserId: vi.fn(),
 }));
 
 vi.mock('../../api/auth', () => ({
@@ -28,6 +29,11 @@ vi.mock('../../stores', () => ({
   useStockPoolStore: {
     getState: () => ({
       resetDashboardState,
+    }),
+  },
+  useAgentChatStore: {
+    getState: () => ({
+      syncOwnerUserId,
     }),
   },
 }));
