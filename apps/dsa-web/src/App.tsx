@@ -1,6 +1,7 @@
 import type React from 'react';
-import { lazy, useEffect } from 'react';
+import { useEffect } from 'react';
 import { BrowserRouter as Router, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { lazyWithRetry } from './utils/lazyWithRetry';
 import { ApiErrorAlert, Shell } from './components/common';
 import {
   PageLoadingFallback,
@@ -12,17 +13,20 @@ import { UiLanguageProvider, useUiLanguage } from './contexts/UiLanguageContext'
 import { useAgentChatStore } from './stores/agentChatStore';
 import './App.css';
 
-const HomePage = lazy(() => import('./pages/HomePage'));
-const BacktestPage = lazy(() => import('./pages/BacktestPage'));
-const SettingsPage = lazy(() => import('./pages/SettingsPage'));
-const LoginPage = lazy(() => import('./pages/LoginPage'));
-const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
-const ChatPage = lazy(() => import('./pages/ChatPage'));
-const PortfolioPage = lazy(() => import('./pages/PortfolioPage'));
-const DecisionSignalsPage = lazy(() => import('./pages/DecisionSignalsPage'));
-const AlertsPage = lazy(() => import('./pages/AlertsPage'));
-const TokenUsagePage = lazy(() => import('./pages/TokenUsagePage'));
-const StockScreeningPage = lazy(() => import('./pages/StockScreeningPage'));
+const HomePage = lazyWithRetry(() => import('./pages/HomePage'), 'pages/HomePage');
+const BacktestPage = lazyWithRetry(() => import('./pages/BacktestPage'), 'pages/BacktestPage');
+const SettingsPage = lazyWithRetry(() => import('./pages/SettingsPage'), 'pages/SettingsPage');
+const LoginPage = lazyWithRetry(() => import('./pages/LoginPage'), 'pages/LoginPage');
+const NotFoundPage = lazyWithRetry(() => import('./pages/NotFoundPage'), 'pages/NotFoundPage');
+const ChatPage = lazyWithRetry(() => import('./pages/ChatPage'), 'pages/ChatPage');
+const PortfolioPage = lazyWithRetry(() => import('./pages/PortfolioPage'), 'pages/PortfolioPage');
+const DecisionSignalsPage = lazyWithRetry(() => import('./pages/DecisionSignalsPage'), 'pages/DecisionSignalsPage');
+const AlertsPage = lazyWithRetry(() => import('./pages/AlertsPage'), 'pages/AlertsPage');
+const TokenUsagePage = lazyWithRetry(() => import('./pages/TokenUsagePage'), 'pages/TokenUsagePage');
+const StockScreeningPage = lazyWithRetry(() => import('./pages/StockScreeningPage'), 'pages/StockScreeningPage');
+const AccountPage = lazyWithRetry(() => import('./pages/AccountPage'), 'pages/AccountPage');
+const AdminUsersPage = lazyWithRetry(() => import('./pages/AdminUsersPage'), 'pages/AdminUsersPage');
+const TechnicalChartPage = lazyWithRetry(() => import('./pages/TechnicalChartPage'), 'pages/TechnicalChartPage');
 
 const AppContent: React.FC = () => {
   const location = useLocation();
@@ -84,9 +88,12 @@ const AppContent: React.FC = () => {
         <Route path="/portfolio" element={<PortfolioPage />} />
         <Route path="/decision-signals" element={<DecisionSignalsPage />} />
         <Route path="/screening" element={<StockScreeningPage />} />
+        <Route path="/technical-chart" element={<TechnicalChartPage />} />
         <Route path="/backtest" element={<BacktestPage />} />
         <Route path="/alerts" element={<AlertsPage />} />
         <Route path="/usage" element={<TokenUsagePage />} />
+        <Route path="/account" element={<AccountPage />} />
+        <Route path="/admin/users" element={<AdminUsersPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>

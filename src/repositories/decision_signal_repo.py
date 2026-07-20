@@ -144,16 +144,22 @@ class DecisionSignalRepository:
                 invalidation_reference_at=row.created_at,
             )
 
-    def get(self, signal_id: int) -> Optional[DecisionSignalRecord]:
+    def get(self, signal_id: int, *, user_id: int) -> Optional[DecisionSignalRecord]:
         self.expire_due_signals()
         with self.db.get_session() as session:
             return session.execute(
-                select(DecisionSignalRecord).where(DecisionSignalRecord.id == signal_id).limit(1)
+                select(DecisionSignalRecord)
+                .where(
+                    DecisionSignalRecord.id == signal_id,
+                    DecisionSignalRecord.user_id == user_id,
+                )
+                .limit(1)
             ).scalar_one_or_none()
 
     def list(
         self,
         *,
+        user_id: int,
         stock_codes: Optional[List[str]] = None,
         stock_identities: Optional[List[Tuple[str, str]]] = None,
         market: Optional[str] = None,
@@ -177,6 +183,7 @@ class DecisionSignalRepository:
         expires_from = self._normalize_optional_datetime(expires_from)
         expires_to = self._normalize_optional_datetime(expires_to)
         conditions = self._build_conditions(
+            user_id=user_id,
             stock_codes=stock_codes,
             stock_identities=stock_identities,
             market=market,
@@ -215,6 +222,7 @@ class DecisionSignalRepository:
     def get_latest_active(
         self,
         *,
+        user_id: int,
         stock_codes: List[str],
         market: Optional[str] = None,
         limit: int = 1,
@@ -223,6 +231,7 @@ class DecisionSignalRepository:
         safe_limit = max(1, min(int(limit), 100))
         conditions = [
             DecisionSignalRecord.status == "active",
+            DecisionSignalRecord.user_id == user_id,
             DecisionSignalRecord.stock_code.in_(stock_codes),
         ]
         if market:
@@ -239,6 +248,7 @@ class DecisionSignalRepository:
     def list_active_by_stock_actions(
         self,
         *,
+        user_id: int,
         market: str,
         stock_code: str,
         actions: List[str],
@@ -249,6 +259,7 @@ class DecisionSignalRepository:
             return []
         conditions = [
             DecisionSignalRecord.status == "active",
+            DecisionSignalRecord.user_id == user_id,
             DecisionSignalRecord.market == market,
             DecisionSignalRecord.stock_code == stock_code,
             DecisionSignalRecord.action.in_(actions),
@@ -267,13 +278,19 @@ class DecisionSignalRepository:
         self,
         signal_id: int,
         *,
+        user_id: int,
         status: str,
         metadata_json: Optional[str] = None,
         replace_metadata: bool = False,
     ) -> Optional[DecisionSignalRecord]:
         with self.db.get_session() as session:
             row = session.execute(
-                select(DecisionSignalRecord).where(DecisionSignalRecord.id == signal_id).limit(1)
+                select(DecisionSignalRecord)
+                .where(
+                    DecisionSignalRecord.id == signal_id,
+                    DecisionSignalRecord.user_id == user_id,
+                )
+                .limit(1)
             ).scalar_one_or_none()
             if row is None:
                 return None
@@ -344,8 +361,10 @@ class DecisionSignalRepository:
         action = fields.get("action")
         horizon = fields.get("horizon")
         market_phase = fields.get("market_phase")
+        user_id = fields.get("user_id")
         if source_report_id is not None:
             conditions = [
+                DecisionSignalRecord.user_id == user_id,
                 DecisionSignalRecord.source_report_id == source_report_id,
                 DecisionSignalRecord.source_type == source_type,
                 DecisionSignalRecord.market == market,
@@ -356,6 +375,7 @@ class DecisionSignalRepository:
             ]
         elif trace_id:
             conditions = [
+                DecisionSignalRecord.user_id == user_id,
                 DecisionSignalRecord.trace_id == trace_id,
                 DecisionSignalRecord.source_type == source_type,
                 DecisionSignalRecord.market == market,
@@ -387,6 +407,7 @@ class DecisionSignalRepository:
             return None
 
         conditions = [
+            DecisionSignalRecord.user_id == fields.get("user_id"),
             DecisionSignalRecord.source_type == fields.get("source_type"),
             DecisionSignalRecord.market == fields.get("market"),
             DecisionSignalRecord.stock_code == fields.get("stock_code"),
@@ -460,6 +481,7 @@ class DecisionSignalRepository:
     @staticmethod
     def _build_conditions(
         *,
+        user_id: int,
         stock_codes: Optional[List[str]],
         stock_identities: Optional[List[Tuple[str, str]]],
         market: Optional[str],
@@ -475,7 +497,7 @@ class DecisionSignalRepository:
         expires_from: Optional[datetime],
         expires_to: Optional[datetime],
     ) -> List[Any]:
-        conditions: List[Any] = []
+        conditions: List[Any] = [DecisionSignalRecord.user_id == user_id]
         if stock_identities:
             identity_conditions = [
                 and_(

@@ -68,6 +68,14 @@ vi.mock('./pages/NotFoundPage', () => ({
   default: () => <div data-testid="not-found-page">Not Found</div>,
 }));
 
+vi.mock('./pages/AdminUsersPage', () => ({
+  default: () => <div data-testid="admin-users-page">Admin users</div>,
+}));
+
+vi.mock('./pages/TechnicalChartPage', () => ({
+  default: () => <div data-testid="technical-chart-page">Technical chart</div>,
+}));
+
 vi.mock('./pages/LoginPage', () => ({
   default: () => <div data-testid="login-page">Login</div>,
 }));
@@ -79,11 +87,13 @@ function makeAuthState(overrides: Partial<AuthState> = {}): AuthState {
     passwordSet: false,
     passwordChangeable: false,
     setupState: 'no_password',
+    currentUser: null,
     isLoading: false,
     loadError: null,
     login: vi.fn().mockResolvedValue({ success: true }),
     changePassword: vi.fn().mockResolvedValue({ success: true }),
     logout: vi.fn().mockResolvedValue(undefined),
+    logoutAll: vi.fn().mockResolvedValue(undefined),
     refreshStatus: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
@@ -149,6 +159,16 @@ describe('App routing behavior', () => {
 
     expect(await screen.findByTestId('decision-signals-page')).toBeInTheDocument();
     expect(setCurrentRoute).toHaveBeenCalledWith('/decision-signals');
+    expect(screen.queryByTestId('home-page')).not.toBeInTheDocument();
+  });
+
+  it('routes /technical-chart to the technical chart page after auth is ready', async () => {
+    window.history.pushState({}, '', '/technical-chart?stock=600519');
+
+    render(<App />);
+
+    expect(await screen.findByTestId('technical-chart-page')).toBeInTheDocument();
+    expect(setCurrentRoute).toHaveBeenCalledWith('/technical-chart');
     expect(screen.queryByTestId('home-page')).not.toBeInTheDocument();
   });
 

@@ -7,9 +7,41 @@ APP_UID="1000"
 APP_GID="1000"
 WRITABLE_DIRS="/app/data /app/logs /app/reports /home/dsa/.longbridge"
 DATABASE_FILE="${DATABASE_PATH:-/app/data/stock_analysis.db}"
+EFINANCE_CACHE_FILE="search-cache.json"
 
 warn() {
     printf '%s\n' "$*" >&2
+}
+
+repair_efinance_cache_dir() {
+    EF_DATA_DIR="$(python -c 'import efinance, pathlib; print(pathlib.Path(efinance.__file__).parent / "data")' 2>/dev/null || true)"
+    if [ -z "$EF_DATA_DIR" ]; then
+        warn "WARN: unable to resolve efinance data directory; search cache writes may fail and fallback sources will be used."
+        return 0
+    fi
+
+    if ! mkdir -p "$EF_DATA_DIR"; then
+        warn "WARN: unable to create efinance data directory at $EF_DATA_DIR; search cache writes may fail."
+        return 0
+    fi
+
+    if ! chown -R "$APP_UID:$APP_GID" "$EF_DATA_DIR"; then
+        warn "WARN: unable to set ownership for efinance data directory $EF_DATA_DIR; A-share efinance lookups may fallback."
+        return 0
+    fi
+
+    if ! chmod -R u+rwX "$EF_DATA_DIR"; then
+        warn "WARN: unable to adjust permissions for efinance data directory $EF_DATA_DIR."
+    fi
+
+    EF_CACHE_FILE="$EF_DATA_DIR/$EFINANCE_CACHE_FILE"
+    if [ -e "$EF_CACHE_FILE" ] && ! gosu "$APP_USER:$APP_GROUP" test -w "$EF_CACHE_FILE"; then
+        if chown "$APP_UID:$APP_GID" "$EF_CACHE_FILE"; then
+            chmod u+rw "$EF_CACHE_FILE" || warn "WARN: unable to adjust permissions for $EF_CACHE_FILE."
+        else
+            warn "WARN: existing $EF_CACHE_FILE is not writable by $APP_USER and ownership repair failed."
+        fi
+    fi
 }
 
 can_write_dir_as_app_user() {
@@ -61,6 +93,8 @@ directory_needs_repair() {
 }
 
 if [ "$(id -u)" = "0" ]; then
+    repair_efinance_cache_dir
+
     for dir in $WRITABLE_DIRS; do
         if ! mkdir -p "$dir"; then
             warn "WARN: unable to create $dir; application writes may fail for this path."
@@ -89,4 +123,5 @@ if [ "$(id -u)" = "0" ]; then
     exec gosu "$APP_USER:$APP_GROUP" "$@"
 fi
 
+warn "WARN: container entrypoint is not running as root; skipping efinance cache ownership repair."
 exec "$@"

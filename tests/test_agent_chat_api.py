@@ -21,7 +21,7 @@ def test_chat_session_messages_api_does_not_expose_provider_trace(tmp_path: Path
     DatabaseManager.reset_instance()
     Config.reset_instance()
     db = DatabaseManager(db_url=f"sqlite:///{tmp_path / 'trace.db'}")
-    session_id = "api-trace-hidden"
+    session_id = "web:1:api-trace-hidden"
     user_id = db.save_conversation_message(session_id, "user", "visible question")
     assistant_id = db.save_conversation_message(session_id, "assistant", "visible answer")
     db.save_agent_provider_turn(
@@ -80,7 +80,7 @@ def test_agent_chat_forwards_stock_context_to_executor(tmp_path: Path) -> None:
                     "/api/v1/agent/chat",
                     json={
                         "message": "如果不考虑 TTM 呢",
-                        "session_id": "s1",
+                        "session_id": "web:1:s1",
                         "context": {
                             "stock_code": "600519",
                             "stock_name": "匿名标的",
@@ -91,7 +91,7 @@ def test_agent_chat_forwards_stock_context_to_executor(tmp_path: Path) -> None:
     assert response.status_code == 200
     kwargs = executor.chat.call_args.kwargs
     assert kwargs["message"] == "如果不考虑 TTM 呢"
-    assert kwargs["session_id"] == "s1"
+    assert kwargs["session_id"] == "web:1:s1"
     assert kwargs["context"]["stock_code"] == "600519"
     assert kwargs["context"]["stock_name"] == "匿名标的"
 
@@ -114,7 +114,7 @@ def test_agent_chat_stream_forwards_stock_context_to_executor(tmp_path: Path) ->
                     "/api/v1/agent/chat/stream",
                     json={
                         "message": "如果不考虑 TTM 呢",
-                        "session_id": "s1",
+                        "session_id": "web:1:s1",
                         "context": {
                             "stock_code": "600519",
                             "stock_name": "匿名标的",
@@ -126,6 +126,6 @@ def test_agent_chat_stream_forwards_stock_context_to_executor(tmp_path: Path) ->
     assert '"type": "done"' in response.text
     kwargs = executor.chat.call_args.kwargs
     assert kwargs["message"] == "如果不考虑 TTM 呢"
-    assert kwargs["session_id"] == "s1"
+    assert kwargs["session_id"] == "web:1:s1"
     assert kwargs["context"]["stock_code"] == "600519"
     assert kwargs["context"]["stock_name"] == "匿名标的"

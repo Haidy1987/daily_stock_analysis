@@ -24,6 +24,7 @@ import src.auth as auth
 from api.middlewares.auth import AuthMiddleware
 from api.v1.endpoints import auth as auth_endpoint
 from src.config import Config
+from src.storage import DatabaseManager
 
 
 def _reset_auth_globals() -> None:
@@ -49,6 +50,7 @@ class AuthApiTestCase(unittest.TestCase):
         os.environ["ENV_FILE"] = str(self.env_path)
         os.environ["DATABASE_PATH"] = str(self.data_dir / "test.db")
         Config.reset_instance()
+        DatabaseManager.reset_instance()
 
         self.auth_patcher = patch.object(auth, "_is_auth_enabled_from_env", return_value=True)
         self.data_dir_patcher = patch.object(auth, "_get_data_dir", return_value=self.data_dir)
@@ -58,6 +60,7 @@ class AuthApiTestCase(unittest.TestCase):
     def tearDown(self) -> None:
         self.auth_patcher.stop()
         self.data_dir_patcher.stop()
+        DatabaseManager.reset_instance()
         Config.reset_instance()
         os.environ.pop("ENV_FILE", None)
         os.environ.pop("DATABASE_PATH", None)
@@ -155,17 +158,12 @@ class AuthApiTestCase(unittest.TestCase):
         session_cookie = cookie_header.split("dsa_session=", 1)[1].split(";", 1)[0]
         self.assertTrue(auth.verify_session(session_cookie))
 
-        logout_response = asyncio.run(auth_endpoint.auth_logout(self._build_request()))
+        logout_response = asyncio.run(
+            auth_endpoint.auth_logout(self._build_request(cookies={"dsa_session": session_cookie}))
+        )
 
         self.assertEqual(logout_response.status_code, 204)
         self.assertFalse(auth.verify_session(session_cookie))
-
-    def test_logout_returns_500_when_session_invalidation_fails(self) -> None:
-        with patch.object(auth_endpoint, "rotate_session_secret", return_value=False):
-            response = asyncio.run(auth_endpoint.auth_logout(self._build_request()))
-
-        self.assertEqual(response.status_code, 500)
-        self.assertIn(b'"error":"internal_error"', response.body)
 
     def test_change_password_requires_session(self) -> None:
         first_response = asyncio.run(
@@ -175,14 +173,20 @@ class AuthApiTestCase(unittest.TestCase):
             )
         )
         self.assertEqual(first_response.status_code, 200)
+        cookie_header = first_response.headers["set-cookie"]
+        session_cookie = cookie_header.split("dsa_session=", 1)[1].split(";", 1)[0]
+        user = auth.resolve_session(session_cookie)
+        self.assertIsNotNone(user)
 
         response = asyncio.run(
             auth_endpoint.auth_change_password(
+                self._build_request(cookies={"dsa_session": session_cookie}),
                 auth_endpoint.ChangePasswordRequest(
                     currentPassword="oldpass6",
                     newPassword="newpass6",
                     newPasswordConfirm="newpass6",
-                )
+                ),
+                user=user,
             )
         )
         self.assertIn(response.status_code, (200, 204))
@@ -195,14 +199,19 @@ class AuthApiTestCase(unittest.TestCase):
             )
         )
         self.assertEqual(first_response.status_code, 200)
+        cookie_header = first_response.headers["set-cookie"]
+        session_cookie = cookie_header.split("dsa_session=", 1)[1].split(";", 1)[0]
+        user = auth.resolve_session(session_cookie)
 
         response = asyncio.run(
             auth_endpoint.auth_change_password(
+                self._build_request(cookies={"dsa_session": session_cookie}),
                 auth_endpoint.ChangePasswordRequest(
                     currentPassword="wrong",
                     newPassword="new123",
                     newPasswordConfirm="new123",
-                )
+                ),
+                user=user,
             )
         )
         self.assertEqual(response.status_code, 400)
@@ -267,7 +276,10 @@ class AuthApiTestCase(unittest.TestCase):
         call_next = AsyncMock(return_value=next_response)
 
         with patch("api.middlewares.auth.is_auth_enabled", return_value=True):
-            with patch("api.middlewares.auth.verify_session", return_value=True):
+            with patch(
+                "api.middlewares.auth.resolve_session",
+                return_value=auth.AuthUser(id=1, username="admin", role="admin", status="active", session_id=1),
+            ):
                 response = asyncio.run(middleware.dispatch(request, call_next))
 
         self.assertEqual(response.status_code, 200)

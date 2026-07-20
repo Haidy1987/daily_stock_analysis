@@ -182,12 +182,14 @@ class PortfolioImportService:
     def commit_trade_records(
         self,
         *,
+        user_id: int,
         account_id: int,
         broker: str,
         records: List[Dict[str, Any]],
         dry_run: bool = False,
     ) -> Dict[str, Any]:
         broker_norm = self._normalize_broker(broker)
+        self.portfolio_service._require_active_account(account_id, user_id=user_id)
 
         inserted_count = 0
         duplicate_count = 0
@@ -232,6 +234,7 @@ class PortfolioImportService:
                     trade_date_obj = date.fromisoformat(str(trade_date_value))
 
                 self.portfolio_service.record_trade(
+                    user_id=user_id,
                     account_id=account_id,
                     symbol=str(record["symbol"]),
                     trade_date=trade_date_obj,

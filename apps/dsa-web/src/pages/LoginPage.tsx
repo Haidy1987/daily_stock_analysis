@@ -25,6 +25,7 @@ const LoginPage: React.FC = () => {
   const redirect =
     rawRedirect.startsWith('/') && !rawRedirect.startsWith('//') ? rawRedirect : '/';
 
+  const [username, setUsername] = useState('admin');
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -60,7 +61,7 @@ const LoginPage: React.FC = () => {
     }
     setIsSubmitting(true);
     try {
-      const result = await login(password, isFirstTime ? passwordConfirm : undefined);
+      const result = await login(password, isFirstTime ? passwordConfirm : undefined, username.trim() || 'admin');
       if (result.success) {
         navigate(redirect, { replace: true });
       } else {
@@ -179,6 +180,18 @@ const LoginPage: React.FC = () => {
 
             <form onSubmit={handleSubmit} className="space-y-6">
               <div className="space-y-4">
+                <Input
+                  id="username"
+                  type="text"
+                  appearance="login"
+                  label={t('login.username')}
+                  placeholder="admin"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  disabled={isSubmitting || isFirstTime}
+                  autoComplete="username"
+                />
+
                 <Input
                   id="password"
                   type="password"

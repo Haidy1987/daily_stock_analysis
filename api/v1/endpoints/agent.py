@@ -9,9 +9,11 @@ import logging
 import uuid
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+
+from api.deps import resolve_effective_user_id
 
 from src.config import get_config
 from src.services.agent_model_service import list_agent_model_deployments
@@ -39,6 +41,20 @@ TOOL_DISPLAY_NAMES: Dict[str, str] = {
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _web_session_prefix(user_id: int) -> str:
+    return f"web:{user_id}:"
+
+
+def _assert_owned_session(session_id: str, user_id: int) -> None:
+    prefix = _web_session_prefix(user_id)
+    if not session_id.startswith(prefix):
+        raise HTTPException(status_code=404, detail="Session not found")
+
+
+def _default_web_session_id(user_id: int) -> str:
+    return f"{_web_session_prefix(user_id)}{uuid.uuid4()}"
 
 class ChatRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
@@ -146,7 +162,7 @@ async def get_strategies():
     )
 
 @router.post("/chat", response_model=ChatResponse)
-async def agent_chat(request: ChatRequest):
+async def agent_chat(request: ChatRequest, http_request: Request):
     """
     Chat with the AI Agent.
     """
@@ -154,8 +170,11 @@ async def agent_chat(request: ChatRequest):
     
     if not config.is_agent_available():
         raise HTTPException(status_code=400, detail="Agent mode is not enabled")
-        
-    session_id = request.session_id or str(uuid.uuid4())
+
+    user_id = resolve_effective_user_id(http_request)
+    session_id = request.session_id or _default_web_session_id(user_id)
+    if request.session_id:
+        _assert_owned_session(session_id, user_id)
     
     try:
         skills = request.effective_skills
@@ -205,37 +224,32 @@ class SessionMessagesResponse(BaseModel):
 
 
 @router.get("/chat/sessions", response_model=SessionsResponse)
-async def list_chat_sessions(limit: int = 50, user_id: Optional[str] = None):
-    """获取聊天会话列表
-
-    Args:
-        limit: Maximum number of sessions to return.
-        user_id: Optional platform-prefixed user identifier for session
-            isolation.  When provided, only sessions whose session_id
-            starts with this prefix are returned.  The value must
-            include the platform prefix, e.g. ``telegram_12345``,
-            ``feishu_ou_abc``.
-    """
+async def list_chat_sessions(http_request: Request, limit: int = 50):
+    """获取当前登录用户的 Web 聊天会话列表。"""
     from src.storage import get_db
+    user_id = resolve_effective_user_id(http_request)
     sessions = get_db().get_chat_sessions(
         limit=limit,
-        session_prefix=user_id,
-        extra_session_ids=[user_id] if user_id else None,
+        session_prefix=_web_session_prefix(user_id),
     )
     return SessionsResponse(sessions=sessions)
 
 
 @router.get("/chat/sessions/{session_id}", response_model=SessionMessagesResponse)
-async def get_chat_session_messages(session_id: str, limit: int = 100):
+async def get_chat_session_messages(session_id: str, http_request: Request, limit: int = 100):
     """获取单个会话的完整消息"""
+    user_id = resolve_effective_user_id(http_request)
+    _assert_owned_session(session_id, user_id)
     from src.storage import get_db
     messages = get_db().get_conversation_messages(session_id, limit=limit)
     return SessionMessagesResponse(session_id=session_id, messages=messages)
 
 
 @router.delete("/chat/sessions/{session_id}")
-async def delete_chat_session(session_id: str):
+async def delete_chat_session(session_id: str, http_request: Request):
     """删除指定会话"""
+    user_id = resolve_effective_user_id(http_request)
+    _assert_owned_session(session_id, user_id)
     from src.storage import get_db
     count = get_db().delete_conversation_session(session_id)
     return {"deleted": count}
@@ -371,7 +385,7 @@ async def agent_research(request: ResearchRequest):
 
 
 @router.post("/chat/stream")
-async def agent_chat_stream(request: ChatRequest):
+async def agent_chat_stream(request: ChatRequest, http_request: Request):
     """
     Chat with the AI Agent, streaming progress via SSE.
     Each SSE event is a JSON object with a 'type' field:
@@ -391,7 +405,10 @@ async def agent_chat_stream(request: ChatRequest):
     if not config.is_agent_available():
         raise HTTPException(status_code=400, detail="Agent mode is not enabled")
 
-    session_id = request.session_id or str(uuid.uuid4())
+    user_id = resolve_effective_user_id(http_request)
+    session_id = request.session_id or _default_web_session_id(user_id)
+    if request.session_id:
+        _assert_owned_session(session_id, user_id)
     loop = asyncio.get_running_loop()
     queue: asyncio.Queue = asyncio.Queue()
 

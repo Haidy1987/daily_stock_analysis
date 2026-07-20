@@ -34,16 +34,32 @@ class AlertRepository:
             session.refresh(row)
             return row
 
-    def get_rule(self, rule_id: int) -> Optional[AlertRuleRecord]:
+    def get_rule(self, rule_id: int, *, user_id: int) -> Optional[AlertRuleRecord]:
         with self.db.get_session() as session:
             return session.execute(
-                select(AlertRuleRecord).where(AlertRuleRecord.id == rule_id).limit(1)
+                select(AlertRuleRecord)
+                .where(
+                    AlertRuleRecord.id == rule_id,
+                    AlertRuleRecord.user_id == user_id,
+                )
+                .limit(1)
             ).scalar_one_or_none()
 
-    def update_rule(self, rule_id: int, fields: Dict[str, Any]) -> Optional[AlertRuleRecord]:
+    def update_rule(
+        self,
+        rule_id: int,
+        *,
+        user_id: int,
+        fields: Dict[str, Any],
+    ) -> Optional[AlertRuleRecord]:
         with self.db.get_session() as session:
             row = session.execute(
-                select(AlertRuleRecord).where(AlertRuleRecord.id == rule_id).limit(1)
+                select(AlertRuleRecord)
+                .where(
+                    AlertRuleRecord.id == rule_id,
+                    AlertRuleRecord.user_id == user_id,
+                )
+                .limit(1)
             ).scalar_one_or_none()
             if row is None:
                 return None
@@ -54,15 +70,21 @@ class AlertRepository:
             session.refresh(row)
             return row
 
-    def delete_rule(self, rule_id: int) -> bool:
+    def delete_rule(self, rule_id: int, *, user_id: int) -> bool:
         with self.db.get_session() as session:
-            result = session.execute(delete(AlertRuleRecord).where(AlertRuleRecord.id == rule_id))
+            result = session.execute(
+                delete(AlertRuleRecord).where(
+                    AlertRuleRecord.id == rule_id,
+                    AlertRuleRecord.user_id == user_id,
+                )
+            )
             session.commit()
             return bool(result.rowcount)
 
     def list_rules(
         self,
         *,
+        user_id: int,
         enabled: Optional[bool] = None,
         alert_type: Optional[str] = None,
         target_scope: Optional[str] = None,
@@ -71,7 +93,7 @@ class AlertRepository:
         page: int = 1,
         page_size: int = 20,
     ) -> Tuple[List[AlertRuleRecord], int]:
-        conditions = []
+        conditions = [AlertRuleRecord.user_id == user_id]
         if enabled is not None:
             conditions.append(AlertRuleRecord.enabled.is_(enabled))
         if alert_type:

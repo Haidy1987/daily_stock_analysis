@@ -187,6 +187,7 @@ class StockAnalysisPipeline:
         portfolio_context: Optional[Dict[str, Any]] = None,
         daily_market_context_enabled: Optional[bool] = None,
         daily_market_context_allow_generate: bool = True,
+        user_id: Optional[int] = None,
     ):
         """
         初始化调度器
@@ -208,6 +209,7 @@ class StockAnalysisPipeline:
         self.analysis_skills = list(analysis_skills) if analysis_skills is not None else None
         self.analysis_phase = analysis_phase or "auto"
         self.portfolio_context = dict(portfolio_context) if isinstance(portfolio_context, dict) else None
+        self.user_id = user_id
         self.daily_market_context_enabled = (
             bool(getattr(self.config, "daily_market_context_enabled", True))
             if daily_market_context_enabled is None
@@ -798,7 +800,8 @@ class StockAnalysisPipeline:
                         report_type=report_type.value,
                         news_content=news_context,
                         context_snapshot=context_snapshot,
-                        save_snapshot=self.save_context_snapshot
+                        save_snapshot=self.save_context_snapshot,
+                        user_id=self.user_id,
                     )
                     valid_saved_history_id = (
                         isinstance(saved_history_id, int)
@@ -1463,6 +1466,7 @@ class StockAnalysisPipeline:
                         news_content=None,
                         context_snapshot=agent_context_snapshot,
                         save_snapshot=self.save_context_snapshot,
+                        user_id=self.user_id,
                     )
                     valid_saved_history_id = (
                         isinstance(saved_history_id, int)
@@ -2381,8 +2385,12 @@ class StockAnalysisPipeline:
                 or getattr(self, "trace_id", None)
                 or query_id
             )
+            from src.auth import get_default_admin_user_id
+
+            effective_user_id = int(self.user_id or get_default_admin_user_id(create_if_missing=True))
             signal_result = extract_and_persist_from_analysis_result(
                 result,
+                user_id=effective_user_id,
                 context_snapshot=context_snapshot,
                 source_report_id=source_report_id,
                 trace_id=str(trace_id),

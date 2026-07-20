@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAgentChatStore } from '../agentChatStore';
+import { createWebChatSessionId } from '../../utils/chatSessionId';
 
 vi.mock('../../api/agent', () => ({
   agentApi: {
@@ -10,6 +11,9 @@ vi.mock('../../api/agent', () => ({
 }));
 
 const { agentApi } = await import('../../api/agent');
+
+const OWNER_USER_ID = 1;
+const SESSION_ID = createWebChatSessionId(OWNER_USER_ID);
 
 const encoder = new TextEncoder();
 
@@ -44,7 +48,8 @@ beforeEach(() => {
     messages: [],
     loading: false,
     progressSteps: [],
-    sessionId: 'session-test',
+    sessionId: SESSION_ID,
+    ownerUserId: OWNER_USER_ID,
     sessions: [],
     sessionsLoading: false,
     chatError: null,
@@ -54,6 +59,19 @@ beforeEach(() => {
     abortController: null,
   });
   vi.clearAllMocks();
+});
+
+describe('agentChatStore.syncOwnerUserId', () => {
+  it('migrates legacy plain uuid storage to a scoped web session id', () => {
+    localStorage.setItem('dsa_chat_session_id', '11111111-1111-4111-8111-111111111111');
+
+    useAgentChatStore.getState().syncOwnerUserId(OWNER_USER_ID);
+
+    const state = useAgentChatStore.getState();
+    expect(state.ownerUserId).toBe(OWNER_USER_ID);
+    expect(state.sessionId.startsWith(`web:${OWNER_USER_ID}:`)).toBe(true);
+    expect(localStorage.getItem('dsa_chat_session_id')).toBe(state.sessionId);
+  });
 });
 
 describe('agentChatStore.startStream', () => {
@@ -68,7 +86,7 @@ describe('agentChatStore.startStream', () => {
 
     await useAgentChatStore
       .getState()
-      .startStream({ message: '分析茅台', session_id: 'session-test' }, { skillName: '趋势技能' });
+      .startStream({ message: '分析茅台', session_id: SESSION_ID }, { skillName: '趋势技能' });
 
     const state = useAgentChatStore.getState();
     expect(state.loading).toBe(false);
@@ -100,7 +118,7 @@ describe('agentChatStore.startStream', () => {
       .startStream(
         {
           message: '分析茅台',
-          session_id: 'session-test',
+          session_id: SESSION_ID,
           skills: ['bull_trend', 'ma_golden_cross'],
         },
         {
@@ -136,7 +154,7 @@ describe('agentChatStore.startStream', () => {
 
     await useAgentChatStore
       .getState()
-      .startStream({ message: '分析茅台', session_id: 'session-test' }, { skillName: '趋势技能' });
+      .startStream({ message: '分析茅台', session_id: SESSION_ID }, { skillName: '趋势技能' });
 
     const state = useAgentChatStore.getState();
     expect(state.loading).toBe(false);
@@ -162,7 +180,7 @@ describe('agentChatStore.startStream', () => {
 
     await useAgentChatStore
       .getState()
-      .startStream({ message: '分析茅台', session_id: 'session-test' }, { skillName: '趋势技能' });
+      .startStream({ message: '分析茅台', session_id: SESSION_ID }, { skillName: '趋势技能' });
 
     const state = useAgentChatStore.getState();
     expect(state.loading).toBe(false);
@@ -184,7 +202,7 @@ describe('agentChatStore.startStream', () => {
 
     await useAgentChatStore
       .getState()
-      .startStream({ message: '分析茅台', session_id: 'session-test' }, { skillName: '趋势技能' });
+      .startStream({ message: '分析茅台', session_id: SESSION_ID }, { skillName: '趋势技能' });
 
     const state = useAgentChatStore.getState();
     expect(state.loading).toBe(false);
@@ -206,7 +224,7 @@ describe('agentChatStore.startStream', () => {
 
     await useAgentChatStore
       .getState()
-      .startStream({ message: '分析茅台', session_id: 'session-test' }, { skillName: '趋势技能' });
+      .startStream({ message: '分析茅台', session_id: SESSION_ID }, { skillName: '趋势技能' });
 
     const state = useAgentChatStore.getState();
     expect(state.loading).toBe(false);
@@ -224,6 +242,7 @@ describe('agentChatStore.switchSession', () => {
 
   it('clears transient loading state when switching sessions during a stream', async () => {
     const ac = new AbortController();
+    const sessionTwo = createWebChatSessionId(OWNER_USER_ID);
     vi.mocked(agentApi.getChatSessionMessages).mockResolvedValue([
       { id: 'msg-2', role: 'assistant', content: '历史回复', created_at: null },
     ]);
@@ -239,11 +258,11 @@ describe('agentChatStore.switchSession', () => {
       },
     });
 
-    await useAgentChatStore.getState().switchSession('session-2');
+    await useAgentChatStore.getState().switchSession(sessionTwo);
 
     const state = useAgentChatStore.getState();
     expect(ac.signal.aborted).toBe(true);
-    expect(state.sessionId).toBe('session-2');
+    expect(state.sessionId).toBe(sessionTwo);
     expect(state.loading).toBe(false);
     expect(state.progressSteps).toEqual([]);
     expect(state.abortController).toBeNull();
@@ -254,29 +273,31 @@ describe('agentChatStore.switchSession', () => {
   });
 
   it('does not let a late session history response overwrite the current session', async () => {
-    const sessionA = createDeferred<
+    const sessionA = createWebChatSessionId(OWNER_USER_ID);
+    const sessionB = createWebChatSessionId(OWNER_USER_ID);
+    const deferredA = createDeferred<
       Array<{ id: string; role: 'user' | 'assistant'; content: string; created_at: string | null }>
     >();
-    const sessionB = createDeferred<
+    const deferredB = createDeferred<
       Array<{ id: string; role: 'user' | 'assistant'; content: string; created_at: string | null }>
     >();
     vi.mocked(agentApi.getChatSessionMessages).mockImplementation((targetSessionId: string) => {
-      if (targetSessionId === 'session-a') return sessionA.promise;
-      if (targetSessionId === 'session-b') return sessionB.promise;
+      if (targetSessionId === sessionA) return deferredA.promise;
+      if (targetSessionId === sessionB) return deferredB.promise;
       return Promise.resolve([]);
     });
 
-    const switchToA = useAgentChatStore.getState().switchSession('session-a');
-    const switchToB = useAgentChatStore.getState().switchSession('session-b');
+    const switchToA = useAgentChatStore.getState().switchSession(sessionA);
+    const switchToB = useAgentChatStore.getState().switchSession(sessionB);
 
-    sessionB.resolve([{ id: 'msg-b', role: 'assistant', content: 'B 回复', created_at: null }]);
+    deferredB.resolve([{ id: 'msg-b', role: 'assistant', content: 'B 回复', created_at: null }]);
     await switchToB;
 
-    sessionA.resolve([{ id: 'msg-a', role: 'assistant', content: 'A 回复', created_at: null }]);
+    deferredA.resolve([{ id: 'msg-a', role: 'assistant', content: 'A 回复', created_at: null }]);
     await switchToA;
 
     const state = useAgentChatStore.getState();
-    expect(state.sessionId).toBe('session-b');
+    expect(state.sessionId).toBe(sessionB);
     expect(state.messages).toEqual([
       { id: 'msg-b', role: 'assistant', content: 'B 回复' },
     ]);

@@ -559,6 +559,7 @@ def _handle_get_portfolio_snapshot(
             return {"error": "as_of must be YYYY-MM-DD"}
 
     try:
+        from src.auth import get_default_admin_user_id
         from src.services.portfolio_service import PortfolioService
         from src.services.portfolio_risk_service import PortfolioRiskService
     except Exception as exc:
@@ -567,7 +568,9 @@ def _handle_get_portfolio_snapshot(
 
     try:
         portfolio_service = PortfolioService()
+        scoped_user_id = get_default_admin_user_id(create_if_missing=True)
         snapshot = portfolio_service.get_portfolio_snapshot(
+            user_id=scoped_user_id,
             account_id=account_id,
             as_of=as_of_date,
             cost_method=method,
@@ -580,6 +583,7 @@ def _handle_get_portfolio_snapshot(
             try:
                 risk_service = PortfolioRiskService(portfolio_service=portfolio_service)
                 risk = risk_service.get_risk_report(
+                    user_id=scoped_user_id,
                     account_id=account_id,
                     as_of=as_of_date,
                     cost_method=method,

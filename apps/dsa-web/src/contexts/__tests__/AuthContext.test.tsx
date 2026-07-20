@@ -3,20 +3,25 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApiError, createParsedApiError } from '../../api/error';
 import { AuthProvider, useAuth } from '../AuthContext';
 
-const { getStatus, login, changePassword, logout, resetDashboardState } = vi.hoisted(() => ({
+const { getStatus, getMe, login, changePassword, logout, logoutAll, resetDashboardState, syncOwnerUserId } = vi.hoisted(() => ({
   getStatus: vi.fn(),
+  getMe: vi.fn(),
   login: vi.fn(),
   changePassword: vi.fn(),
   logout: vi.fn(),
+  logoutAll: vi.fn(),
   resetDashboardState: vi.fn(),
+  syncOwnerUserId: vi.fn(),
 }));
 
 vi.mock('../../api/auth', () => ({
   authApi: {
     getStatus,
+    getMe,
     login,
     changePassword,
     logout,
+    logoutAll,
   },
 }));
 
@@ -24,6 +29,11 @@ vi.mock('../../stores', () => ({
   useStockPoolStore: {
     getState: () => ({
       resetDashboardState,
+    }),
+  },
+  useAgentChatStore: {
+    getState: () => ({
+      syncOwnerUserId,
     }),
   },
 }));
@@ -57,12 +67,16 @@ describe('AuthContext', () => {
         loggedIn: false,
         passwordSet: false,
         passwordChangeable: true,
+        setupState: 'enabled',
+        currentUser: null,
       })
       .mockResolvedValueOnce({
         authEnabled: true,
         loggedIn: true,
         passwordSet: true,
         passwordChangeable: true,
+        setupState: 'enabled',
+        currentUser: { id: 1, username: 'admin', role: 'admin', status: 'active' },
       });
     login.mockResolvedValue(undefined);
 
@@ -86,6 +100,8 @@ describe('AuthContext', () => {
         loggedIn: true,
         passwordSet: true,
         passwordChangeable: true,
+        setupState: 'enabled',
+        currentUser: { id: 1, username: 'admin', role: 'admin', status: 'active' },
       })
       .mockResolvedValueOnce({
         authEnabled: true,
@@ -93,6 +109,7 @@ describe('AuthContext', () => {
         passwordSet: true,
         passwordChangeable: true,
         setupState: 'enabled',
+        currentUser: null,
       });
     logout.mockResolvedValue(undefined);
 
@@ -136,6 +153,7 @@ describe('AuthContext', () => {
         passwordSet: true,
         passwordChangeable: true,
         setupState: 'enabled',
+        currentUser: { id: 1, username: 'admin', role: 'admin', status: 'active' },
       })
       .mockResolvedValueOnce({
         authEnabled: true,
@@ -143,6 +161,7 @@ describe('AuthContext', () => {
         passwordSet: true,
         passwordChangeable: true,
         setupState: 'enabled',
+        currentUser: null,
       });
     logout.mockRejectedValue(
       createApiError(

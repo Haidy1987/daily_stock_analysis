@@ -9,15 +9,16 @@
 2. POST /api/v1/stocks/parse-import 解析 CSV/Excel/剪贴板
 3. GET /api/v1/stocks/{code}/quote 实时行情接口
 4. GET /api/v1/stocks/{code}/history 历史行情接口
+5. GET /api/v1/stocks/{code}/technical-chart 技术图表指标序列
 """
 
 import logging
 from typing import Optional
 import re
 
-from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile, Depends
+from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 
-from api.deps import get_system_config_service
+from api.deps import resolve_effective_user_id
 
 from api.v1.schemas.stocks import (
     ExtractFromImageResponse,
@@ -26,6 +27,7 @@ from api.v1.schemas.stocks import (
     StockHistoryResponse,
     StockQuote,
 )
+from api.v1.schemas.technical_chart import TechnicalChartResponse
 from api.v1.schemas.history import WatchlistRequest, WatchlistResponse
 from api.v1.schemas.common import ErrorResponse
 from src.services.image_stock_extractor import (
@@ -38,9 +40,13 @@ from src.services.import_parser import (
     parse_import_from_bytes,
     parse_import_from_text,
 )
+from src.repositories.watchlist_repo import WatchlistRepository
 from src.services.stock_service import StockService
-from src.services.stock_list_parser import split_stock_list
-from src.services.system_config_service import SystemConfigService
+from src.services.technical_chart_service import (
+    TechnicalChartService,
+    TechnicalChartSourceUnavailableError,
+    TechnicalChartValidationError,
+)
 from data_provider.base import normalize_stock_code
 
 logger = logging.getLogger(__name__)
@@ -49,29 +55,6 @@ router = APIRouter()
 
 # 须在 /{stock_code} 路由之前定义
 ALLOWED_MIME_STR = ", ".join(ALLOWED_MIME)
-
-
-def _read_watchlist_codes(service: SystemConfigService) -> list:
-    """Read STOCK_LIST codes as-is (no normalization)."""
-    config_data = service.get_config(include_schema=False)
-    stock_list_str = ""
-    for item in config_data.get("items", []):
-        if item.get("key") == "STOCK_LIST":
-            stock_list_str = str(item.get("value", ""))
-            break
-    return split_stock_list(stock_list_str)
-
-
-def _write_watchlist_codes(service: SystemConfigService, codes: list) -> None:
-    """Persist stock codes to STOCK_LIST as-is (no normalization)."""
-    config_data = service.get_config(include_schema=False)
-    config_version = config_data.get("config_version", "")
-    service.update(
-        config_version=config_version,
-        items=[{"key": "STOCK_LIST", "value": ",".join(codes)}],
-        mask_token="******",
-        reload_now=True,
-    )
 
 
 # Stock code validation patterns (aligned with frontend validateStockCode)
@@ -321,13 +304,12 @@ async def parse_import(request: Request) -> ExtractFromImageResponse:
         500: {"description": "服务器错误", "model": ErrorResponse},
     },
     summary="获取自选队列",
-    description="返回当前 STOCK_LIST 配置中的所有股票代码。",
+    description="返回当前登录用户的自选股票代码。",
 )
-def get_watchlist(
-    service: SystemConfigService = Depends(get_system_config_service),
-) -> WatchlistResponse:
+def get_watchlist(request: Request) -> WatchlistResponse:
     try:
-        codes = _read_watchlist_codes(service)
+        user_id = resolve_effective_user_id(request)
+        codes = WatchlistRepository().list_codes(user_id)
         return WatchlistResponse(stock_codes=codes, message=f"当前自选 {len(codes)} 只股票")
     except Exception as e:
         logger.error(f"获取自选队列失败: {e}", exc_info=True)
@@ -346,20 +328,22 @@ def get_watchlist(
         500: {"description": "服务器错误", "model": ErrorResponse},
     },
     summary="加入自选队列",
-    description="将指定股票代码加入 STOCK_LIST。",
+    description="将指定股票代码加入当前用户的自选列表。",
 )
 def add_to_watchlist(
-    request: WatchlistRequest,
-    service: SystemConfigService = Depends(get_system_config_service),
+    body: WatchlistRequest,
+    request: Request,
 ) -> WatchlistResponse:
     try:
-        validated = _validate_and_normalize_stock_code(request.stock_code)
-        codes = _read_watchlist_codes(service)
+        validated = _validate_and_normalize_stock_code(body.stock_code)
+        user_id = resolve_effective_user_id(request)
+        repo = WatchlistRepository()
+        codes = repo.list_codes(user_id)
         existing_keys = [_watchlist_match_key(c) for c in codes]
         if _watchlist_match_key(validated) not in existing_keys:
-            codes.append(request.stock_code.strip())
-            _write_watchlist_codes(service, codes)
-        return WatchlistResponse(stock_codes=codes, message=f"已加入 {request.stock_code.strip()}")
+            repo.add_code(user_id, body.stock_code.strip())
+            codes = repo.list_codes(user_id)
+        return WatchlistResponse(stock_codes=codes, message=f"已加入 {body.stock_code.strip()}")
     except HTTPException:
         raise
     except Exception as e:
@@ -379,22 +363,24 @@ def add_to_watchlist(
         500: {"description": "服务器错误", "model": ErrorResponse},
     },
     summary="从自选队列删除",
-    description="从 STOCK_LIST 中移除指定股票代码。",
+    description="从当前用户的自选列表中移除指定股票代码。",
 )
 def remove_from_watchlist(
-    request: WatchlistRequest,
-    service: SystemConfigService = Depends(get_system_config_service),
+    body: WatchlistRequest,
+    request: Request,
 ) -> WatchlistResponse:
     try:
-        validated = _validate_and_normalize_stock_code(request.stock_code)
-        codes = _read_watchlist_codes(service)
+        validated = _validate_and_normalize_stock_code(body.stock_code)
+        user_id = resolve_effective_user_id(request)
+        repo = WatchlistRepository()
+        codes = repo.list_codes(user_id)
         existing_keys = [_watchlist_match_key(c) for c in codes]
         requested_key = _watchlist_match_key(validated)
         if requested_key in existing_keys:
             idx = existing_keys.index(requested_key)
-            codes.pop(idx)
-            _write_watchlist_codes(service, codes)
-        return WatchlistResponse(stock_codes=codes, message=f"已移除 {request.stock_code.strip()}")
+            repo.remove_code(user_id, codes[idx])
+            codes = repo.list_codes(user_id)
+        return WatchlistResponse(stock_codes=codes, message=f"已移除 {body.stock_code.strip()}")
     except HTTPException:
         raise
     except Exception as e:
@@ -552,4 +538,64 @@ def get_stock_history(
                 "error": "internal_error",
                 "message": f"获取历史行情失败: {str(e)}"
             }
+        )
+
+
+@router.get(
+    "/{stock_code}/technical-chart",
+    response_model=TechnicalChartResponse,
+    responses={
+        200: {"description": "技术图表数据"},
+        400: {"description": "股票代码非法", "model": ErrorResponse},
+        422: {"description": "参数非法或不支持的周期/指标", "model": ErrorResponse},
+        503: {"description": "行情数据源不可用", "model": ErrorResponse},
+        500: {"description": "服务器错误", "model": ErrorResponse},
+    },
+    summary="获取技术图表指标序列",
+    description=(
+        "返回 daily/weekly/monthly OHLCV 与完整技术指标时间序列、"
+        "支撑压力 summary 与数据状态；周/月线先聚合日线再计算指标"
+    ),
+)
+def get_technical_chart(
+    stock_code: str,
+    period: str = Query(
+        "daily",
+        description="K 线周期（daily / weekly / monthly）",
+        pattern="^(daily|weekly|monthly)$",
+    ),
+    days: int = Query(120, ge=60, le=250, description="展示 K 线根数（目标周期）"),
+    indicators: Optional[str] = Query(
+        None,
+        description="逗号分隔指标组：ma,volume,macd,rsi,boll,kdj,cci,bias,support_resistance",
+    ),
+) -> TechnicalChartResponse:
+    """获取技术图表数据（公共行情，不绑定 user_id）。"""
+    canonical = _validate_and_normalize_stock_code(stock_code)
+    try:
+        result = TechnicalChartService().get_technical_chart(
+            stock_code=canonical,
+            period=period,
+            days=days,
+            indicators=indicators,
+        )
+        return TechnicalChartResponse(**result)
+    except TechnicalChartValidationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"error": exc.error, "message": exc.message},
+        )
+    except TechnicalChartSourceUnavailableError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"error": exc.error, "message": exc.message},
+        )
+    except Exception:
+        logger.error("technical-chart failed for %s", canonical, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "internal_error",
+                "message": "获取技术图表失败",
+            },
         )

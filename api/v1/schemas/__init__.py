@@ -40,6 +40,13 @@ from api.v1.schemas.stocks import (
     StockHistoryResponse,
     KLineData,
 )
+from api.v1.schemas.technical_chart import (
+    ChartExtreme,
+    ChartLevel,
+    TechnicalChartItem,
+    TechnicalChartResponse,
+    TechnicalChartSummary,
+)
 from api.v1.schemas.backtest import (
     BacktestRunRequest,
     BacktestRunResponse,
@@ -155,6 +162,11 @@ __all__ = [
     "StockQuote",
     "StockHistoryResponse",
     "KLineData",
+    "ChartExtreme",
+    "ChartLevel",
+    "TechnicalChartItem",
+    "TechnicalChartResponse",
+    "TechnicalChartSummary",
     # backtest
     "BacktestRunRequest",
     "BacktestRunResponse",

@@ -34,18 +34,27 @@ class AnalysisRepository:
         """
         self.db = db_manager or DatabaseManager.get_instance()
     
-    def get_by_query_id(self, query_id: str) -> Optional[AnalysisHistory]:
+    def get_by_query_id(
+        self,
+        query_id: str,
+        user_id: Optional[int] = None,
+    ) -> Optional[AnalysisHistory]:
         """
         根据 query_id 获取分析记录
         
         Args:
             query_id: 查询 ID
+            user_id: 可选用户 ID 过滤
             
         Returns:
             AnalysisHistory 对象，不存在返回 None
         """
         try:
-            records = self.db.get_analysis_history(query_id=query_id, limit=1)
+            records = self.db.get_analysis_history(
+                query_id=query_id,
+                limit=1,
+                user_id=user_id,
+            )
             return records[0] if records else None
         except Exception as e:
             logger.error(f"查询分析记录失败: {e}")
@@ -55,7 +64,8 @@ class AnalysisRepository:
         self,
         code: Optional[str] = None,
         days: int = 30,
-        limit: int = 50
+        limit: int = 50,
+        user_id: Optional[int] = None,
     ) -> List[AnalysisHistory]:
         """
         获取分析记录列表
@@ -64,6 +74,7 @@ class AnalysisRepository:
             code: 股票代码筛选
             days: 时间范围（天）
             limit: 返回数量限制
+            user_id: 可选用户 ID 过滤
             
         Returns:
             AnalysisHistory 对象列表
@@ -72,7 +83,8 @@ class AnalysisRepository:
             return self.db.get_analysis_history(
                 code=code,
                 days=days,
-                limit=limit
+                limit=limit,
+                user_id=user_id,
             )
         except Exception as e:
             logger.error(f"获取分析列表失败: {e}")
@@ -84,7 +96,8 @@ class AnalysisRepository:
         query_id: str,
         report_type: str,
         news_content: Optional[str] = None,
-        context_snapshot: Optional[Dict[str, Any]] = None
+        context_snapshot: Optional[Dict[str, Any]] = None,
+        user_id: Optional[int] = None,
     ) -> int:
         """
         保存分析结果
@@ -95,6 +108,7 @@ class AnalysisRepository:
             report_type: 报告类型
             news_content: 新闻内容
             context_snapshot: 上下文快照
+            user_id: 可选用户 ID
             
         Returns:
             新保存的 AnalysisHistory.id；保存失败返回 0。
@@ -105,25 +119,37 @@ class AnalysisRepository:
                 query_id=query_id,
                 report_type=report_type,
                 news_content=news_content,
-                context_snapshot=context_snapshot
+                context_snapshot=context_snapshot,
+                user_id=user_id,
             )
         except Exception as e:
             logger.error(f"保存分析结果失败: {e}")
             return 0
     
-    def count_by_code(self, code: str, days: int = 30) -> int:
+    def count_by_code(
+        self,
+        code: str,
+        days: int = 30,
+        user_id: Optional[int] = None,
+    ) -> int:
         """
         统计指定股票的分析记录数
         
         Args:
             code: 股票代码
             days: 时间范围（天）
+            user_id: 可选用户 ID 过滤
             
         Returns:
             记录数量
         """
         try:
-            records = self.db.get_analysis_history(code=code, days=days, limit=1000)
+            records = self.db.get_analysis_history(
+                code=code,
+                days=days,
+                limit=1000,
+                user_id=user_id,
+            )
             return len(records)
         except Exception as e:
             logger.error(f"统计分析记录失败: {e}")

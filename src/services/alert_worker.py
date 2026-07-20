@@ -391,6 +391,15 @@ class AlertWorker:
                 self.service._sanitize_text(str(exc) or "decision signal summary failed"),
             )
 
+    def _rule_user_id(self, runtime_rule: RuntimeAlertRule) -> int:
+        rule = getattr(runtime_rule, "rule", runtime_rule)
+        metadata = getattr(rule, "metadata", None)
+        if isinstance(metadata, dict) and metadata.get("rule_user_id") is not None:
+            return int(metadata["rule_user_id"])
+        from src.auth import get_default_admin_user_id
+
+        return get_default_admin_user_id(create_if_missing=True)
+
     def _resolve_decision_signal_summary(
         self,
         runtime_rule: RuntimeAlertRule,
@@ -400,7 +409,9 @@ class AlertWorker:
         if identity is None:
             return None
         stock_code, market = identity
+        rule_user_id = self._rule_user_id(runtime_rule)
         latest = self.decision_signal_service.get_latest_active(
+            user_id=rule_user_id,
             stock_code=stock_code,
             market=market,
             limit=1,
@@ -415,7 +426,8 @@ class AlertWorker:
                 result,
                 stock_code=stock_code,
                 market=market,
-            )
+            ),
+            user_id=rule_user_id,
         )
         item = created.get("item") if isinstance(created, dict) else None
         return summarize_decision_signal(item)

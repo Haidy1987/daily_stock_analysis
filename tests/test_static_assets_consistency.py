@@ -186,6 +186,52 @@ def test_existing_asset_is_served_from_explicit_assets_route(tmp_path: Path) -> 
     static_dir = tmp_path / "static"
     assets_dir = static_dir / "assets"
     assets_dir.mkdir(parents=True)
+    js_file = assets_dir / "index-abc12345.js"
+    css_file = assets_dir / "index-abc12345.css"
+    js_file.write_text("console.log('ok')", encoding="utf-8")
+    css_file.write_text("body{color:#fff}", encoding="utf-8")
+    _write_index(static_dir, _vite_index("index-abc12345.js", "index-abc12345.css"))
+
+    client = TestClient(create_app(static_dir=static_dir))
+
+    js_response = client.get("/assets/index-abc12345.js")
+    css_response = client.get("/assets/index-abc12345.css")
+
+    assert js_response.status_code == 200
+    assert js_response.text == "console.log('ok')"
+    assert js_response.headers["content-type"].startswith("text/javascript")
+    assert js_response.headers["cache-control"] == "public, max-age=31536000, immutable"
+
+    assert css_response.status_code == 200
+    assert css_response.text == "body{color:#fff}"
+    assert css_response.headers["content-type"].startswith("text/css")
+    assert css_response.headers["cache-control"] == "public, max-age=31536000, immutable"
+
+
+def test_non_hashed_asset_does_not_use_immutable_cache(tmp_path: Path) -> None:
+    from api.app import create_app
+
+    static_dir = tmp_path / "static"
+    assets_dir = static_dir / "assets"
+    assets_dir.mkdir(parents=True)
+    js_file = assets_dir / "legacy.js"
+    js_file.write_text("console.log('legacy')", encoding="utf-8")
+    _write_index(static_dir, _vite_index("legacy.js", "legacy.css"))
+
+    client = TestClient(create_app(static_dir=static_dir))
+    response = client.get("/assets/legacy.js")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/javascript")
+    assert response.headers.get("cache-control") != "public, max-age=31536000, immutable"
+
+
+def test_existing_asset_is_served_from_explicit_assets_route_legacy_names(tmp_path: Path) -> None:
+    from api.app import create_app
+
+    static_dir = tmp_path / "static"
+    assets_dir = static_dir / "assets"
+    assets_dir.mkdir(parents=True)
     js_file = assets_dir / "index-abc.js"
     css_file = assets_dir / "index-abc.css"
     js_file.write_text("console.log('ok')", encoding="utf-8")
@@ -204,6 +250,24 @@ def test_existing_asset_is_served_from_explicit_assets_route(tmp_path: Path) -> 
     assert css_response.status_code == 200
     assert css_response.text == "body{color:#fff}"
     assert css_response.headers["content-type"].startswith("text/css")
+
+
+def test_spa_fallback_route_returns_uncached_index(tmp_path: Path) -> None:
+    from api.app import create_app
+
+    static_dir = tmp_path / "static"
+    assets_dir = static_dir / "assets"
+    assets_dir.mkdir(parents=True)
+    (assets_dir / "index-abc12345.js").write_text("// ok", encoding="utf-8")
+    (assets_dir / "index-abc12345.css").write_text("/* ok */", encoding="utf-8")
+    _write_index(static_dir, _vite_index("index-abc12345.js", "index-abc12345.css"))
+
+    client = TestClient(create_app(static_dir=static_dir))
+    response = client.get("/technical-chart")
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store, no-cache, must-revalidate, max-age=0"
+    assert "index-abc12345.js" in response.text
 
 
 def test_existing_js_asset_overrides_bad_system_mime_mapping(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

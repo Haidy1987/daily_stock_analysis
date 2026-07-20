@@ -1,10 +1,12 @@
 import type React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Pie, PieChart, ResponsiveContainer, Tooltip, Legend, Cell } from 'recharts';
 import { decisionSignalsApi } from '../api/decisionSignals';
 import { portfolioApi } from '../api/portfolio';
 import type { ParsedApiError } from '../api/error';
 import { getParsedApiError } from '../api/error';
+import { buildTechnicalChartHref } from '../api/technicalChart';
 import { ApiErrorAlert, Card, Badge, ConfirmDialog, EmptyState, InlineAlert } from '../components/common';
 import { PortfolioSignalSummary } from '../components/decision-signals/DecisionSignalDisplay';
 import { useUiLanguage } from '../contexts/UiLanguageContext';
@@ -180,6 +182,7 @@ async function loadPortfolioSignalLookup(lookup: PortfolioSignalLookup): Promise
 }
 
 const PortfolioPage: React.FC = () => {
+  const navigate = useNavigate();
   const { language, t } = useUiLanguage();
   const text = PORTFOLIO_TEXT[language];
   const decisionActionLabels = useMemo(() => buildDecisionActionLabelMap(t), [t]);
@@ -1258,14 +1261,24 @@ const PortfolioPage: React.FC = () => {
                         <PortfolioSignalSummary item={signal} loading={portfolioSignalsLoading} />
                       </td>
                       <td className="py-2 text-right">
-                        <button
-                          type="button"
-                          onClick={() => void handleAnalyzePosition(row)}
-                          disabled={analyzing}
-                          className="btn-secondary px-2 py-1 text-xs disabled:cursor-wait disabled:opacity-60"
-                        >
-                          {analyzing ? text.submitting : text.analyze}
-                        </button>
+                        <div className="flex flex-col items-end gap-1">
+                          <button
+                            type="button"
+                            onClick={() => void handleAnalyzePosition(row)}
+                            disabled={analyzing}
+                            className="btn-secondary px-2 py-1 text-xs disabled:cursor-wait disabled:opacity-60"
+                          >
+                            {analyzing ? text.submitting : text.analyze}
+                          </button>
+                          <button
+                            type="button"
+                            data-testid={`portfolio-technical-chart-${row.symbol}`}
+                            onClick={() => navigate(buildTechnicalChartHref({ stock: normalizeStockCode(row.symbol) }))}
+                            className="btn-secondary px-2 py-1 text-xs"
+                          >
+                            {t('technicalChart.openChart')}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                     );

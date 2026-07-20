@@ -25,7 +25,7 @@ from typing import Any, Dict, Iterator, List, Optional, Tuple
 from fastapi import HTTPException, Request
 from pydantic import BaseModel, Field
 
-from src.auth import COOKIE_NAME, is_auth_enabled, refresh_auth_state, verify_session
+from src.auth import COOKIE_NAME, is_auth_enabled, refresh_auth_state, resolve_session
 from src.config import Config, DEFAULT_ALPHASIFT_INSTALL_SPEC, get_configured_llm_models
 
 logger = logging.getLogger(__name__)
@@ -1493,8 +1493,18 @@ def _ensure_alphasift_install_access(request: Request) -> None:
         )
 
     cookie_val = request.cookies.get(COOKIE_NAME)
-    if cookie_val and verify_session(cookie_val):
+    user = resolve_session(cookie_val) if cookie_val else None
+    if user is not None and user.role == "admin":
         return
+
+    if user is not None:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "alphasift_install_access_denied",
+                "message": "AlphaSift 修复安装需要管理员会话。",
+            },
+        )
 
     raise HTTPException(
         status_code=401,

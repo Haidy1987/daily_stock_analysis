@@ -12,6 +12,7 @@ API v1 路由聚合
 from fastapi import APIRouter
 
 from api.v1.endpoints import (
+    admin_users,
     agent,
     alerts,
     alphasift,
@@ -36,6 +37,12 @@ router.include_router(
     auth.router,
     prefix="/auth",
     tags=["Auth"]
+)
+
+router.include_router(
+    admin_users.router,
+    prefix="/admin",
+    tags=["AdminUsers"]
 )
 
 router.include_router(

@@ -10,6 +10,8 @@ from typing import Any, Dict, Optional
 
 import pandas as pd
 
+from src.services.technical_indicators import calculate_cci_series, calculate_kdj_series
+
 
 TECHNICAL_ALERT_TYPES = frozenset({
     "ma_price_cross",
@@ -297,12 +299,14 @@ def _evaluate_kdj(stock_code: str, params: Dict[str, Any], df: pd.DataFrame) -> 
     k_period = int(params["k_period"])
     d_period = int(params["d_period"])
     direction = str(params["direction"])
-    lowest_low = df["low"].rolling(window=period).min()
-    highest_high = df["high"].rolling(window=period).max()
-    denominator = highest_high - lowest_low
-    rsv = ((df["close"] - lowest_low) / denominator.mask(denominator == 0) * 100).fillna(50)
-    k_value = rsv.ewm(alpha=1 / k_period, adjust=False).mean()
-    d_value = k_value.ewm(alpha=1 / d_period, adjust=False).mean()
+    k_value, d_value, _j_value = calculate_kdj_series(
+        df["high"],
+        df["low"],
+        df["close"],
+        period=period,
+        k_period=k_period,
+        d_period=d_period,
+    )
     delta = k_value - d_value
     latest = _latest_timestamp(df)
     prev_delta, curr_delta = float(delta.iloc[-2]), float(delta.iloc[-1])
@@ -328,13 +332,7 @@ def _evaluate_cci(stock_code: str, params: Dict[str, Any], df: pd.DataFrame) -> 
     period = int(params["period"])
     threshold = float(params["threshold"])
     direction = str(params["direction"])
-    typical_price = (df["high"] + df["low"] + df["close"]) / 3
-    tp_ma = typical_price.rolling(window=period).mean()
-    mean_deviation = typical_price.rolling(window=period).apply(
-        lambda values: float(abs(values - values.mean()).mean()),
-        raw=False,
-    )
-    cci = (typical_price - tp_ma) / (0.015 * mean_deviation.mask(mean_deviation == 0))
+    cci = calculate_cci_series(df["high"], df["low"], df["close"], period=period)
     latest = _latest_timestamp(df)
     prev_value, curr_value = float(cci.iloc[-2]), float(cci.iloc[-1])
     if not all(isfinite(value) for value in (prev_value, curr_value)):

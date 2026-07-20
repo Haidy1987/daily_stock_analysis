@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any, Dict, Iterable, List, Optional
 
+from src.repositories.watchlist_repo import WatchlistRepository
 from src.services.portfolio_risk_service import PortfolioRiskService
 from src.services.portfolio_service import PortfolioService
 
@@ -112,14 +113,19 @@ def normalize_batch_target_scope_target(target_scope: str, target: str) -> str:
     return target_text
 
 
-def ensure_active_portfolio_account(target: str, *, portfolio_service: Optional[PortfolioService] = None) -> None:
+def ensure_active_portfolio_account(
+    target: str,
+    *,
+    user_id: int,
+    portfolio_service: Optional[PortfolioService] = None,
+) -> None:
     """Validate that an explicit portfolio account target exists and is active."""
 
     if str(target or "").strip() == "all":
         return
     account_id = _positive_int_target(target)
     service = portfolio_service or PortfolioService()
-    accounts = service.list_accounts(include_inactive=False)
+    accounts = service.list_accounts(user_id=user_id, include_inactive=False)
     active_ids = {int(item.get("id")) for item in accounts if item.get("id") is not None}
     if account_id not in active_ids:
         raise ValueError(f"portfolio account is not active or does not exist: {account_id}")
@@ -127,6 +133,7 @@ def ensure_active_portfolio_account(target: str, *, portfolio_service: Optional[
 
 def expand_symbol_targets(
     *,
+    user_id: int,
     target_scope: str,
     target: str,
     config: Any,
@@ -139,10 +146,14 @@ def expand_symbol_targets(
     """
 
     if target_scope == "watchlist":
-        symbols = _watchlist_symbols(config)
+        symbols = _watchlist_symbols(user_id)
         display_prefix = "自选股"
     elif target_scope == "portfolio_holdings":
-        symbols = _portfolio_holding_symbols(target=target, portfolio_service=portfolio_service)
+        symbols = _portfolio_holding_symbols(
+            user_id=user_id,
+            target=target,
+            portfolio_service=portfolio_service,
+        )
         display_prefix = "持仓"
     else:
         return [], 0
@@ -200,6 +211,7 @@ def make_portfolio_risk_payload(
         parameters=dict(data.get("parameters") or {}),
         metadata={
             "persisted_rule_id": data["id"],
+            "rule_user_id": data.get("user_id"),
             "effective_target": effective_target,
             "display_target": display_target,
         },
@@ -231,6 +243,7 @@ def evaluate_static_alert(rule: StaticAlertEvaluation) -> Dict[str, Any]:
 def evaluate_portfolio_risk_alert(
     rule: PortfolioRiskAlert,
     *,
+    user_id: Optional[int] = None,
     portfolio_service: Optional[PortfolioService] = None,
     risk_service: Optional[PortfolioRiskService] = None,
 ) -> Dict[str, Any]:
@@ -239,12 +252,25 @@ def evaluate_portfolio_risk_alert(
     account_id = None if rule.target == "all" else _positive_int_target(rule.target)
     service = portfolio_service or PortfolioService()
     risk = risk_service or PortfolioRiskService(portfolio_service=service)
+    scoped_user_id = int(user_id or rule.metadata.get("rule_user_id") or 0)
+    if scoped_user_id <= 0:
+        from src.auth import get_default_admin_user_id
+
+        scoped_user_id = get_default_admin_user_id(create_if_missing=True)
 
     if rule.alert_type == "portfolio_price_stale":
-        snapshot = service.get_portfolio_snapshot(account_id=account_id, cost_method="fifo")
+        snapshot = service.get_portfolio_snapshot(
+            user_id=scoped_user_id,
+            account_id=account_id,
+            cost_method="fifo",
+        )
         return _evaluate_price_stale(rule, snapshot)
 
-    report = risk.get_risk_report(account_id=account_id, cost_method="fifo")
+    report = risk.get_risk_report(
+        user_id=scoped_user_id,
+        account_id=account_id,
+        cost_method="fifo",
+    )
     if rule.alert_type == "portfolio_stop_loss":
         return _evaluate_stop_loss(rule, report)
     if rule.alert_type == "portfolio_concentration":
@@ -334,24 +360,27 @@ def aggregate_dry_run_results(rule_id: int, target_scope: str, results: List[Dic
     }
 
 
-def _watchlist_symbols(config: Any) -> List[str]:
-    refresh = getattr(config, "refresh_stock_list", None)
-    if callable(refresh):
-        try:
-            refresh()
-        except Exception as exc:
-            logger.warning("[portfolio_alerts] Failed to refresh watchlist symbols: %s", exc)
-    return list(getattr(config, "stock_list", []) or [])
+def _watchlist_symbols(user_id: int) -> List[str]:
+    try:
+        return WatchlistRepository().list_codes(user_id)
+    except Exception as exc:
+        logger.warning("[portfolio_alerts] Failed to load watchlist symbols: %s", exc)
+        return []
 
 
 def _portfolio_holding_symbols(
     *,
+    user_id: int,
     target: str,
     portfolio_service: Optional[PortfolioService],
 ) -> List[str]:
     service = portfolio_service or PortfolioService()
     account_id = None if target == "all" else _positive_int_target(target)
-    snapshot = service.get_portfolio_snapshot(account_id=account_id, cost_method="fifo")
+    snapshot = service.get_portfolio_snapshot(
+        user_id=user_id,
+        account_id=account_id,
+        cost_method="fifo",
+    )
     symbols: List[str] = []
     for account in snapshot.get("accounts", []) or []:
         for position in account.get("positions", []) or []:

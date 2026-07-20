@@ -256,6 +256,39 @@ docker-compose -f ./docker/docker-compose.yml up -d
 
 重建完成后，用 `Ctrl+Shift+R` 强制刷新浏览器缓存，再访问页面。
 
+### 6. 部署后旧页面报「页面加载失败」或 chunk 404
+
+**症状**：Shell、导航和主题正常，但某个页面（常见于 `/technical-chart`）在接口返回 200 后仍显示「页面加载失败」；Network 里可见 `/assets/*.js` 404。
+
+**根因**：浏览器仍持有旧 tab 的 JS 引用，而新版本已替换 `static/assets` 下的哈希文件。
+
+**当前恢复机制**：
+
+- Web 前端会对动态模块加载失败自动刷新一次（同一会话、同一路径最多一次）。
+- 第二次仍失败时，错误页会显示「页面资源版本已更新，请重新加载」，并可复制脱敏错误编号。
+- `index.html` 始终 `no-store`；带内容哈希的 `/assets/*` 使用 `immutable` 长期缓存。
+
+**建议操作**：
+
+1. 手动刷新页面或重新打开目标路由。
+2. 部署时确认 Docker 镜像已重建且 `static/assets` 与 `index.html` 同步。
+3. 如需进一步降低旧 chunk 404 概率，可在 CDN/Nginx 层保留上一版本 `/assets` 24～72 小时（后续可选方案；当前容器内 build 默认清空旧 assets）。
+
+**验证 Cache-Control**：
+
+```bash
+curl -I http://<host>:<port>/
+curl -I http://<host>:<port>/assets/index-<hash>.js
+```
+
+期望：`/` 返回 `Cache-Control: no-store`；哈希 JS/CSS 返回 `public, max-age=31536000, immutable`。
+
+**efinance 权限 smoke（Docker）**：
+
+```bash
+docker compose -f ./docker/docker-compose.yml exec -u dsa server sh /app/scripts/smoke_efinance_cache_permissions.sh
+```
+
 **直接部署用户**：先确保已安装 Node.js 18+（推荐 20+），然后手动构建前端：
 
 ```bash
@@ -331,9 +364,16 @@ sudo systemctl reload nginx
 ADMIN_AUTH_ENABLED=true
 ```
 
-重启服务后，第一次访问网页时会要求设置初始密码。设置完成后，每次打开设置页面都需要输入密码，可以防止 API Key 等敏感配置被他人看到。
+重启服务后，第一次访问网页时会要求为默认管理员账号 `admin` 设置初始密码。登录后 Cookie 名仍为 `dsa_session`，会话保存在数据库 `user_sessions` 表。系统配置写入、`.env` 导入导出等敏感操作需要 `admin` 角色。管理员可在 Web「用户管理」页创建普通用户；所有登录用户可在「个人账户」页修改密码并退出全部设备。
 
-> 如果忘了密码，可以在服务器上执行：`python -m src.auth reset_password`
+灰度建议：先设 `AUTH_MODE=single_admin` 验证管理员登录与迁移，再改为 `AUTH_MODE=multi_user` 后创建测试用户。完整切换、备份与回滚见 [多用户切换与验收说明](plans/multi-user-cutover.md)。
+
+相关 API：
+- 认证：`GET /api/v1/auth/status`、`GET /api/v1/auth/me`、`POST /api/v1/auth/login`、`POST /api/v1/auth/logout`、`POST /api/v1/auth/logout-all`、`POST /api/v1/auth/change-password`
+- 管理员用户：`GET/POST /api/v1/admin/users`、`PATCH/DELETE /api/v1/admin/users/{id}`、`POST /api/v1/admin/users/{id}/reset-password`、`POST /api/v1/admin/users/{id}/revoke-sessions`
+
+> 如果忘了管理员密码，可以在服务器上执行：`python -m src.auth reset_password`
+> 若升级前已有 `.admin_password_hash`，数据库初始化时会自动迁移为 `users` 表中的 `admin` 用户。
 
 ---
 
