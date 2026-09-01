@@ -772,5 +772,71 @@ class RuntimeSchedulerServiceTestCase(unittest.TestCase):
         ])
 
 
+    def test_start_runs_a_share_background_only_without_daily_analysis(self) -> None:
+        schedulers = []
+
+        class _FakeScheduler:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+                self.background_tasks = []
+                self.daily_task = None
+                self.daily_task_run_immediately = None
+                schedulers.append(self)
+
+            def set_daily_task(self, task, run_immediately: bool) -> None:
+                self.daily_task = task
+                self.daily_task_run_immediately = run_immediately
+
+            def add_background_task(self, task, interval_seconds, run_immediately=False, name=None):
+                self.background_tasks.append({
+                    "task": task,
+                    "interval_seconds": interval_seconds,
+                    "run_immediately": run_immediately,
+                    "name": name,
+                })
+
+            def run(self):
+                return None
+
+            def stop(self):
+                return None
+
+            @property
+            def schedule(self):
+                return SimpleNamespace(get_jobs=lambda: [])
+
+        class _NoopThread:
+            def __init__(self, target=None, daemon=None, name=None):
+                self._target = target
+
+            def start(self):
+                return None
+
+        config = SimpleNamespace(
+            schedule_enabled=False,
+            schedule_time="18:00",
+            schedule_times=["18:00"],
+            agent_event_monitor_enabled=False,
+            a_share_universe_sync_enabled=True,
+            a_share_universe_sync_interval_hours=24,
+            a_share_universe_sync_run_immediately=False,
+        )
+
+        service = RuntimeSchedulerService(config_provider=lambda: config)
+        service._reload_config = lambda: config
+
+        with patch("src.services.runtime_scheduler.Scheduler", _FakeScheduler), patch(
+            "src.services.runtime_scheduler.threading.Thread",
+            _NoopThread,
+        ):
+            service.start()
+
+        scheduler = service._scheduler
+        self.assertIsNotNone(scheduler)
+        self.assertIsNone(scheduler.daily_task)  # type: ignore[attr-defined]
+        self.assertEqual(len(scheduler.background_tasks), 1)  # type: ignore[attr-defined]
+        self.assertEqual(scheduler.background_tasks[0]["name"], "a_share_universe_sync")  # type: ignore[index]
+
+
 if __name__ == "__main__":
     unittest.main()

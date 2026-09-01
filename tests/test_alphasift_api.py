@@ -1743,7 +1743,7 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
             patch.dict(os.environ, {"DSA_DESKTOP_MODE": "false"}, clear=False),
             patch("src.services.alphasift_service.refresh_auth_state") as refresh_mock,
             patch("src.services.alphasift_service.is_auth_enabled", return_value=True),
-            patch("src.services.alphasift_service.verify_session", return_value=False) as verify_session_mock,
+            patch("src.services.alphasift_service.resolve_session", return_value=None) as resolve_session_mock,
             patch("src.services.alphasift_service.subprocess.run") as run_mock,
         ):
             with self.assertRaises(HTTPException) as caught:
@@ -1752,7 +1752,7 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
         self.assertEqual(caught.exception.status_code, 401)
         self.assertEqual(caught.exception.detail["error"], "alphasift_install_access_denied")
         refresh_mock.assert_called_once()
-        verify_session_mock.assert_called_once_with("invalid-session")
+        resolve_session_mock.assert_called_once_with("invalid-session")
         run_mock.assert_not_called()
 
     def test_install_allows_valid_admin_session_outside_desktop_mode(self) -> None:
@@ -1763,14 +1763,14 @@ class AlphaSiftOpportunitiesApiTestCase(unittest.TestCase):
             patch.dict(os.environ, {"DSA_DESKTOP_MODE": "false"}, clear=False),
             patch("src.services.alphasift_service.refresh_auth_state") as refresh_mock,
             patch("src.services.alphasift_service.is_auth_enabled", return_value=True),
-            patch("src.services.alphasift_service.verify_session", return_value=True) as verify_session_mock,
+            patch("src.services.alphasift_service.resolve_session", return_value=SimpleNamespace(role="admin")) as resolve_session_mock,
             patch("src.services.alphasift_service._install_alphasift", return_value={"installed": True}) as install_mock,
         ):
             payload = alphasift_endpoint.alphasift_install(request=request, config=config)
 
         self.assertEqual(payload["installed"], True)
         refresh_mock.assert_called_once()
-        verify_session_mock.assert_called_once_with("valid-session")
+        resolve_session_mock.assert_called_once_with("valid-session")
         install_mock.assert_called_once_with(config)
 
     def test_install_rejects_when_disabled_without_side_effects(self) -> None:

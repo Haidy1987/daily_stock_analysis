@@ -6,6 +6,8 @@ from __future__ import annotations
 import json
 import unittest
 from datetime import date
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from src.services.portfolio_alerts import (
     PortfolioRiskAlert,
@@ -213,25 +215,22 @@ class PortfolioAlertsTestCase(unittest.TestCase):
         self.assertEqual([item.symbol for item in targets], ["SH000001", "SZ000001", "000001", "SH600519"])
         self.assertEqual(overflow, 0)
 
-    def test_watchlist_expansion_refreshes_stock_list(self) -> None:
-        class Config:
-            stock_list = ["600519", "600519", "aapl"]
+    def test_watchlist_expansion_loads_codes_from_repository(self) -> None:
+        with patch(
+            "src.services.portfolio_alerts.WatchlistRepository"
+        ) as repo_cls:
+            repo_cls.return_value.list_codes.return_value = [
+                "000001",
+                "000001",
+                "hk00700",
+            ]
+            targets, overflow = expand_symbol_targets(
+                user_id=1,
+                target_scope="watchlist",
+                target="default",
+                config=SimpleNamespace(),
+            )
 
-            def __init__(self):
-                self.refreshed = False
-
-            def refresh_stock_list(self):
-                self.refreshed = True
-                self.stock_list = ["000001", "000001", "hk00700"]
-
-        config = Config()
-        targets, overflow = expand_symbol_targets(
-            target_scope="watchlist",
-            target="default",
-            config=config,
-        )
-
-        self.assertTrue(config.refreshed)
         self.assertEqual([item.symbol for item in targets], ["000001", "HK00700"])
         self.assertEqual(overflow, 0)
 

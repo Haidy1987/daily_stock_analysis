@@ -9,7 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [新功能] Web 导航新增「A 股列表」页：支持代码/名称搜索、采集状态展示；管理员可手动触发全量采集（60 分钟冷却，默认不自动抓取）。
+- [新功能] A 股全量主数据 Phase 4：新增后台定时同步（runtime/CLI schedule）、同步后索引刷新、Docker 配置示例、可选 GitHub Actions workflow 与运维文档。
+- [新功能] A 股全量主数据 Phase 3：新增基于 `a_share_universe` 的索引生成（`scripts/generate_index_from_db.py`、`refresh_stock_index.py --source db`）、`stock_index_loader` DB 回退与 `GET /api/v1/universe/a-share/search` 搜索 API。
+- [新功能] A 股全量主数据 Phase 2：新增东方财富快照采集（spot + 业绩报表 + 可选个股补充）、checkpoint/resume、`snapshot/full` CLI 模式与 `data/a_share_sync/last_report.json` 同步报告。
+- [新功能] A 股全量主数据 Phase 1：新增东方财富/Tushare universe 采集 Provider、`AShareUniverseSyncService` 与 `scripts/sync_a_share_universe.py` CLI。
+- [新功能] A 股全量主数据 Phase 0：新增 `a_share_universe` / `a_share_snapshot` 表、`AShareUniverseRepository` 与配置项。
+- [修复] 补充 LiteLLM 流式调用运行时所需的 `orjson` 依赖，修复部署环境中分析请求因 `No module named 'orjson'` 导致所有模型重试后失败的问题。
 - [修复] 问股 Web 会话 ID 与后端 `web:{user_id}:` 前缀对齐，修复多用户场景下发送消息返回 `Session not found` 的问题。
+- [改进] 新增可选 Traefik Compose override，为已有 proxy 网络部署自动注册 HTTPS Web 路由。
+- [改进] Docker Compose 将 WebUI 运行时配置持久化到 `data/runtime.env`，发布同步继续保留用户 AI 配置。
 - [改进] 技术图表 MA 均线扩展为 MA5/10/20/30/60/90/120/250，并按最长周期预取历史数据，确保 60 日视图也能绘制长期均线。
 - [改进] 技术图表页面移除嵌套 main，并使用宽屏容器展示图表，充分利用侧边栏之外的可用宽度。
 - [改进] 技术图表页面采用固定 10px 外层边距并清除页面容器内外间距，进一步扩大图表可视宽度。

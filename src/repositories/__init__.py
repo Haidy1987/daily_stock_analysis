@@ -8,6 +8,7 @@
 1. 导出所有 Repository 类
 """
 
+from src.repositories.a_share_universe_repo import AShareUniverseRepository
 from src.repositories.analysis_repo import AnalysisRepository
 from src.repositories.backtest_repo import BacktestRepository
 from src.repositories.decision_signal_repo import DecisionSignalRepository
@@ -15,6 +16,7 @@ from src.repositories.decision_signal_outcome_repo import DecisionSignalOutcomeR
 from src.repositories.stock_repo import StockRepository
 
 __all__ = [
+    "AShareUniverseRepository",
     "AnalysisRepository",
     "BacktestRepository",
     "DecisionSignalRepository",

@@ -34,6 +34,7 @@ from src.services.run_diagnostics import (
     reset_run_diagnostic_context,
 )
 from src.utils.analysis_metadata import SELECTION_SOURCES
+from src.auth import resolve_service_user_id
 from src.services.stock_code_utils import resolve_index_stock_code_for_analysis
 
 logger = logging.getLogger(__name__)
@@ -332,7 +333,7 @@ class AnalysisTaskQueue:
     def submit_task(
         self,
         stock_code: str,
-        user_id: int,
+        user_id: Optional[int] = None,
         stock_name: Optional[str] = None,
         original_query: Optional[str] = None,
         selection_source: Optional[str] = None,
@@ -362,6 +363,7 @@ class AnalysisTaskQueue:
         Raises:
             DuplicateTaskError: Raised when the stock is already being analyzed
         """
+        user_id = resolve_service_user_id(user_id)
         stock_code = resolve_index_stock_code_for_analysis(stock_code)
         if not stock_code:
             raise ValueError("股票代码不能为空或仅包含空白字符")
@@ -387,7 +389,7 @@ class AnalysisTaskQueue:
     def submit_tasks_batch(
         self,
         stock_codes: List[str],
-        user_id: int,
+        user_id: Optional[int] = None,
         stock_name: Optional[str] = None,
         original_query: Optional[str] = None,
         selection_source: Optional[str] = None,
@@ -406,6 +408,7 @@ class AnalysisTaskQueue:
         - Duplicate stocks are skipped and recorded in duplicates.
         - If executor submission fails, the current batch is rolled back.
         """
+        user_id = resolve_service_user_id(user_id)
         self.validate_selection_source(selection_source)
 
         accepted: List[TaskInfo] = []
@@ -480,7 +483,7 @@ class AnalysisTaskQueue:
         self,
         run_task: Callable[[], Optional[Any]],
         *,
-        user_id: int,
+        user_id: Optional[int] = None,
         stock_code: str,
         stock_name: Optional[str] = None,
         report_type: str = "detailed",
@@ -494,6 +497,7 @@ class AnalysisTaskQueue:
         This is used by callers that need task status visibility but do not
         map to standard per-stock async analysis flow.
         """
+        user_id = resolve_service_user_id(user_id)
         task_id = task_id or uuid.uuid4().hex
         task_info = TaskInfo(
             task_id=task_id,

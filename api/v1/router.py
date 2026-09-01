@@ -26,6 +26,7 @@ from api.v1.endpoints import (
     portfolio,
     stocks,
     system_config,
+    universe,
     usage,
 )
 
@@ -67,6 +68,12 @@ router.include_router(
     stocks.router,
     prefix="/stocks",
     tags=["Stocks"]
+)
+
+router.include_router(
+    universe.router,
+    prefix="/universe",
+    tags=["Universe"]
 )
 
 router.include_router(

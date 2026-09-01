@@ -28,18 +28,18 @@ from typing import List, Dict, Any, Optional
 # Add the project root to sys.path.
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-try:
-    from pypinyin import lazy_pinyin, Style
-    PYPINYIN_AVAILABLE = True
-except ImportError:
-    lazy_pinyin = None
-    Style = None
-    PYPINYIN_AVAILABLE = False
+from src.services.stock_index_builder import (
+    build_stock_index,
+    compress_index,
+    normalize_stock_name_for_index,
+    pypinyin_available,
+    write_compressed_index,
+)
 
 
 def require_pypinyin() -> bool:
     """Ensure pypinyin is available before generating autocomplete assets."""
-    if PYPINYIN_AVAILABLE:
+    if pypinyin_available():
         return True
 
     print("[Error] pypinyin not available; cannot generate stock autocomplete index.")
@@ -231,71 +231,6 @@ def load_akshare_data(logs_dir: Path) -> List[Dict[str, Any]]:
     return stocks
 
 
-def generate_pinyin(name: str) -> tuple:
-    """
-    Generate pinyin for stock name
-
-    Args:
-        name: Stock name
-
-    Returns:
-        Tuple of (pinyin_full, pinyin_abbr)
-    """
-    if not PYPINYIN_AVAILABLE:
-        raise RuntimeError("pypinyin is required to generate stock autocomplete index")
-
-    try:
-        normalized_name = normalize_name_for_pinyin(name)
-
-        # Full pinyin spelling.
-        py_full = lazy_pinyin(normalized_name, style=Style.NORMAL)
-        pinyin_full = ''.join(py_full)
-
-        # Pinyin abbreviation.
-        py_abbr = lazy_pinyin(normalized_name, style=Style.FIRST_LETTER)
-        pinyin_abbr = ''.join(py_abbr)
-
-        return (pinyin_full, pinyin_abbr)
-    except Exception as e:
-        print(f"[Warning] Failed to generate pinyin for {name}: {e}")
-        return (None, None)
-
-
-def normalize_name_for_pinyin(name: str) -> str:
-    """
-    Normalize stock name to avoid special prefixes and full-width characters polluting pinyin index
-
-    Args:
-        name: Original stock name
-
-    Returns:
-        Normalized name for pinyin generation
-    """
-    normalized = unicodedata.normalize('NFKC', name).strip()
-
-    # Strip common A-share prefixes while preserving the core name.
-    normalized = re.sub(r'^(?:\*?ST|N)+', '', normalized, flags=re.IGNORECASE)
-
-    return normalized.strip() or unicodedata.normalize('NFKC', name).strip()
-
-
-def normalize_stock_name_for_index(name: str, market: str) -> str:
-    """
-    Normalize stock names before writing the long-lived autocomplete index.
-
-    For A-shares (including BSE), ``XD``/``XR``/``DR`` are
-    ex-dividend/ex-rights trading-day prefixes. They should not be stored in
-    the official static index because they can become stale almost immediately.
-    New-stock prefixes such as ``N``/``C`` and risk-warning prefixes such as
-    ``ST``/``*ST`` are preserved; they should be refreshed by the next
-    stock-list update.
-    """
-    normalized = unicodedata.normalize('NFKC', str(name or '')).strip()
-    if market in {'CN', 'BSE'}:
-        normalized = re.sub(r'^(?:XD|XR|DR)\s*', '', normalized, flags=re.IGNORECASE)
-    return normalized.strip()
-
-
 def extract_symbol_from_ts_code(ts_code: str, market: str) -> Optional[str]:
     """
     从 ts_code 提取 displayCode
@@ -458,164 +393,6 @@ def determine_market(ts_code: str) -> str:
     return 'CN'
 
 
-def generate_aliases(name: str, market: str) -> List[str]:
-    """
-    Generate stock aliases
-
-    Args:
-        name: Stock name
-        market: Market code
-
-    Returns:
-        List of aliases
-    """
-    aliases = []
-
-    # A股常见别名
-    cn_alias_map = {
-        '贵州茅台': ['茅台'],
-        '中国平安': ['平安'],
-        '平安银行': ['平银'],
-        '招商银行': ['招行'],
-        '五粮液': ['五粮'],
-        '宁德时代': ['宁德'],
-        '比亚迪': ['比亚'],
-        '工商银行': ['工行'],
-        '建设银行': ['建行'],
-        '农业银行': ['农行'],
-        '中国银行': ['中行'],
-        '交通银行': ['交行'],
-        '兴业银行': ['兴业'],
-        '浦发银行': ['浦发'],
-        '民生银行': ['民生'],
-        '中信证券': ['中信'],
-        '东方财富': ['东财'],
-        '海康威视': ['海康'],
-        '隆基绿能': ['隆基'],
-        '中国神华': ['神华'],
-        '长江电力': ['长电'],
-        '中国石化': ['石化'],
-        '中国石油': ['石油'],
-    }
-
-    # 港股常见别名
-    hk_alias_map = {
-        '腾讯控股': ['腾讯', 'Tencent'],
-        '阿里巴巴-SW': ['阿里', '阿里巴巴', 'Alibaba'],
-        '美团-W': ['美团', 'Meituan'],
-        '小米集团-W': ['小米', 'Xiaomi'],
-        '京东集团-SW': ['京东', 'JD'],
-        '网易-S': ['网易', 'NetEase'],
-        '百度集团-SW': ['百度', 'Baidu'],
-        '中芯国际': ['中芯', 'SMIC'],
-        '中国移动': ['中移动', 'China Mobile'],
-        '中国海洋石油': ['中海油', 'CNOOC'],
-    }
-
-    # 美股常见别名
-    us_alias_map = {
-        'Apple Inc.': ['Apple', 'AAPL'],
-        'Microsoft Corporation': ['Microsoft', 'MSFT'],
-        'Amazon.com, Inc.': ['Amazon', 'AMZN'],
-        'Tesla Inc.': ['Tesla', 'TSLA'],
-        'Meta Platforms, Inc.': ['Meta', 'Facebook', 'META'],
-        'Alphabet Inc.': ['Google', 'Alphabet', 'GOOGL'],
-        'NVIDIA Corporation': ['NVIDIA', 'NVDA'],
-        'Netflix Inc.': ['Netflix', 'NFLX'],
-        'Intel Corporation': ['Intel', 'INTC'],
-        'Advanced Micro Devices': ['AMD', 'AMD'],
-    }
-
-    # 根据市场选择映射表
-    if market == 'CN':
-        alias_map = cn_alias_map
-    elif market == 'HK':
-        alias_map = hk_alias_map
-    elif market == 'US':
-        alias_map = us_alias_map
-    else:
-        alias_map = {}
-
-    if name in alias_map:
-        aliases.extend(alias_map[name])
-
-    return aliases
-
-
-def build_stock_index(stocks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """
-    Build the stock index.
-
-    Args:
-        stocks: Raw stock rows（已包含 market 字段）
-
-    Returns:
-        Stock index entries
-    """
-    index = []
-
-    for stock in stocks:
-        ts_code = stock['ts_code']
-        symbol = stock['symbol']
-        name = stock['name']
-        market = stock.get('market', 'CN')  # 优先使用已解析的市场，否则从 ts_code 判断
-
-        # 如果没有 market 字段，从 ts_code 判断
-        if market == 'CN' and '.' not in ts_code:
-            market = determine_market(ts_code)
-
-        # Generate pinyin fields.
-        pinyin_full, pinyin_abbr = generate_pinyin(name)
-
-        # Generate aliases.
-        aliases = generate_aliases(name, market)
-        for alias in stock.get('aliases', []):
-            if alias != name and alias not in aliases:
-                aliases.append(alias)
-
-        index.append({
-            "canonicalCode": ts_code,    # Example: 000001.SZ, AAPL
-            "displayCode": symbol,       # Example: 000001, AAPL
-            "nameZh": name,
-            "pinyinFull": pinyin_full,
-            "pinyinAbbr": pinyin_abbr,
-            "aliases": aliases,
-            "market": market,
-            "assetType": "stock",
-            "active": True,
-            "popularity": 100,
-        })
-
-    return index
-
-
-def compress_index(index: List[Dict[str, Any]]) -> List[List]:
-    """
-    压缩索引为数组格式以减少文件大小
-
-    Args:
-        index: 原始索引
-
-    Returns:
-        压缩后的索引
-    """
-    compressed = []
-    for item in index:
-        compressed.append([
-            item["canonicalCode"],
-            item["displayCode"],
-            item["nameZh"],
-            item.get("pinyinFull"),
-            item.get("pinyinAbbr"),
-            item.get("aliases", []),
-            item["market"],
-            item["assetType"],
-            item["active"],
-            item.get("popularity", 0),
-        ])
-    return compressed
-
-
 def main():
     """主函数"""
     parser = argparse.ArgumentParser(description='从 CSV 生成股票自动补全索引')
@@ -686,15 +463,7 @@ def main():
                 print(f"        {i + 1}. {item}")
     else:
         print(f"\n[4/5] 写入文件：{output_path}")
-        with open(output_path, 'w', encoding='utf-8') as f:
-            f.write('[\n')
-            for i, item in enumerate(compressed):
-                json.dump(item, f, ensure_ascii=False, separators=(',', ':'))
-                if i < len(compressed) - 1:
-                    f.write(',\n')
-                else:
-                    f.write('\n')
-            f.write(']\n')
+        write_compressed_index(output_path, compressed)
 
         file_size = output_path.stat().st_size
         print(f"      文件大小：{file_size / 1024:.2f} KB")

@@ -61,7 +61,7 @@ from src.utils.sniper_points import extract_sniper_points, parse_sniper_value
 
 logger = logging.getLogger(__name__)
 T = TypeVar("T")
-CURRENT_SCHEMA_VERSION = "2026-06-05-create-all-baseline"
+CURRENT_SCHEMA_VERSION = "2026-09-01-a-share-universe"
 INTELLIGENCE_ITEM_NULL_SCOPE_VALUE = "__dsa_null_scope__"
 
 # SQLAlchemy ORM 基类
@@ -296,6 +296,87 @@ class FundamentalSnapshot(Base):
 
     def __repr__(self) -> str:
         return f"<FundamentalSnapshot(query_id={self.query_id}, code={self.code})>"
+
+
+class AShareUniverse(Base):
+    """Slow-changing A-share master data for full-market universe sync."""
+
+    __tablename__ = 'a_share_universe'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(String(10), nullable=False, unique=True, index=True)
+    name = Column(String(64), nullable=False)
+    exchange = Column(String(8), nullable=False, index=True)
+    board = Column(String(32))
+    industry = Column(String(64), index=True)
+    list_date = Column(Date)
+    active = Column(Boolean, nullable=False, default=True, index=True)
+    source = Column(String(32))
+    created_at = Column(DateTime, default=utc_naive_now, nullable=False)
+    updated_at = Column(DateTime, default=utc_naive_now, onupdate=utc_naive_now, nullable=False)
+
+    __table_args__ = (
+        Index('ix_a_share_universe_exchange_active', 'exchange', 'active'),
+    )
+
+    def __repr__(self) -> str:
+        return f"<AShareUniverse(code={self.code}, name={self.name})>"
+
+
+class AShareSnapshot(Base):
+    """Fast-changing A-share market snapshot keyed by code and trade date."""
+
+    __tablename__ = 'a_share_snapshot'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(String(10), nullable=False, index=True)
+    data_date = Column(Date, nullable=False, index=True)
+
+    price = Column(Float)
+    open = Column(Float)
+    high = Column(Float)
+    low = Column(Float)
+    pre_close = Column(Float)
+    pct_chg = Column(Float)
+    amplitude = Column(Float)
+    volume = Column(Float)
+    amount = Column(Float)
+    turnover_rate = Column(Float)
+    volume_ratio = Column(Float)
+
+    pe_ttm = Column(Float)
+    pe_dynamic = Column(Float)
+    pb = Column(Float)
+    ps = Column(Float)
+    total_mv = Column(Float)
+    circ_mv = Column(Float)
+    total_share = Column(Float)
+    float_share = Column(Float)
+
+    eps = Column(Float)
+    bps = Column(Float)
+    roe = Column(Float)
+    revenue = Column(Float)
+    revenue_yoy = Column(Float)
+    net_profit = Column(Float)
+    net_profit_yoy = Column(Float)
+
+    high_52w = Column(Float)
+    low_52w = Column(Float)
+    ytd_pct_chg = Column(Float)
+
+    source = Column(String(32))
+    fetched_at = Column(DateTime, default=utc_naive_now, nullable=False)
+    created_at = Column(DateTime, default=utc_naive_now, nullable=False)
+    updated_at = Column(DateTime, default=utc_naive_now, onupdate=utc_naive_now, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint('code', 'data_date', name='uix_a_share_snapshot_code_date'),
+        Index('ix_a_share_snapshot_code_date', 'code', 'data_date'),
+    )
+
+    def __repr__(self) -> str:
+        return f"<AShareSnapshot(code={self.code}, data_date={self.data_date})>"
 
 
 class AnalysisHistory(Base):

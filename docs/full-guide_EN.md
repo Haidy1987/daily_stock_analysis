@@ -425,16 +425,21 @@ cd daily_stock_analysis
 cp .env.example .env
 vim .env  # Fill in API Keys and configuration
 
+# Initialize the runtime config on the first deployment; never overwrite data/ later
+mkdir -p data
+cp .env data/runtime.env
+chmod 600 data/runtime.env
+
 # 3. Start container
-docker-compose -f ./docker/docker-compose.yml up -d server     # Web service mode (recommended, provides API & WebUI)
-docker-compose -f ./docker/docker-compose.yml up -d analyzer   # Scheduled task mode
-docker-compose -f ./docker/docker-compose.yml up -d            # Start both modes
+docker compose --env-file .env -f ./docker/docker-compose.yml up -d server     # Web service mode (recommended, provides API & WebUI)
+docker compose --env-file .env -f ./docker/docker-compose.yml up -d analyzer   # Scheduled task mode
+docker compose --env-file .env -f ./docker/docker-compose.yml up -d            # Start both modes
 
 # 4. Access WebUI
 # http://localhost:8000
 
 # 5. View logs
-docker-compose -f ./docker/docker-compose.yml logs -f server
+docker compose --env-file .env -f ./docker/docker-compose.yml logs -f server
 ```
 
 The default Compose file sets `limits.memory: 1G` and `reservations.memory: 512M` for each service. Use `512M` only for lightweight Web/API usage, single-stock runs, and low concurrency with `MAX_WORKERS=1`; use `1G` for normal full analysis, and `2G+` when running `server + analyzer` together, multi-stock analysis, market review, news expansion, image reports, or AlphaSift. If constrained to `512M`, avoid starting both services and reduce heavy features.
@@ -444,11 +449,17 @@ The default Compose file sets `limits.memory: 1G` and `reservations.memory: 512M
 If you do not want to keep the source tree on the target machine, you can run the published image directly:
 
 ```bash
+# Initialize the runtime config on the first deployment; preserve data/runtime.env later
+mkdir -p data
+cp .env data/runtime.env
+chmod 600 data/runtime.env
+
 # Web/API mode
 docker pull zhulinsen/daily_stock_analysis:latest
 docker run -d \
   --name dsa-server \
-  --env-file .env \
+  --env-file data/runtime.env \
+  -e ENV_FILE=/app/data/runtime.env \
   -p 8000:8000 \
   -v "$(pwd)/data:/app/data" \
   -v "$(pwd)/logs:/app/logs" \
@@ -459,7 +470,8 @@ docker run -d \
 # Scheduled-task mode
 docker run -d \
   --name dsa-analyzer \
-  --env-file .env \
+  --env-file data/runtime.env \
+  -e ENV_FILE=/app/data/runtime.env \
   -v "$(pwd)/data:/app/data" \
   -v "$(pwd)/logs:/app/logs" \
   -v "$(pwd)/reports:/app/reports" \
@@ -472,9 +484,9 @@ For pinned deployments or easier rollback, replace `latest` with a concrete vers
 
 | Command | Description | Port |
 |------|------|------|
-| `docker-compose -f ./docker/docker-compose.yml up -d server` | Web service mode, provides API & WebUI | 8000 |
-| `docker-compose -f ./docker/docker-compose.yml up -d analyzer` | Scheduled task mode, daily auto execution | - |
-| `docker-compose -f ./docker/docker-compose.yml up -d` | Start both modes simultaneously | 8000 |
+| `docker compose --env-file .env -f ./docker/docker-compose.yml up -d server` | Web service mode, provides API & WebUI | 8000 |
+| `docker compose --env-file .env -f ./docker/docker-compose.yml up -d analyzer` | Scheduled task mode, daily auto execution | - |
+| `docker compose --env-file .env -f ./docker/docker-compose.yml up -d` | Start both modes simultaneously | 8000 |
 
 ### Docker Compose Configuration
 
@@ -489,9 +501,10 @@ x-common: &common
     dockerfile: docker/Dockerfile
   restart: unless-stopped
   env_file:
-    - ../.env
+    - ../data/runtime.env
   environment:
     - TZ=Asia/Shanghai
+    - ENV_FILE=/app/data/runtime.env
   volumes:
     - ../data:/app/data
     - ../logs:/app/logs
@@ -527,9 +540,9 @@ For both `docker run` and Compose, keep startup environment injection separate f
   This passes key/value pairs from `.env` into the container process environment.
 - Runtime config writes: do not bind-mount the host `.env` as a single file over the container's `.env` path. Docker treats the target as a mount point, so the `os.replace()` atomic update used during config saves can fail with `Device or resource busy`; fallback in-place writes can also fail on permissions.
 
-The default Compose and `docker run` examples only use `env_file` / `--env-file` for startup config injection and no longer mount the host `.env` file into the container. When the active `.env` file does not contain a key, the WebUI Settings page falls back to showing the same key from startup-injected process environment variables, so Docker users can see injected config without importing it first. The raw `.env` export still contains only the active config file content.
+The default Compose deployment uses `data/runtime.env` as both the container startup and runtime config file; initialize it from the repository-root `.env` on the first deployment. The root `.env` is passed with `--env-file .env` only for Compose interpolation such as ports and hostnames. The WebUI Settings page still falls back to startup-injected values when a key is absent from the active file, and raw `.env` export contains only the active config file content.
 
-Runtime config saved from the WebUI is written to the container-local config file by default and is not the same as writing back to the host `.env`; after deleting or recreating the container, startup still uses the injected `.env` file. If you need persistent runtime config, point `ENV_FILE` at a writable data volume file such as `/app/data/runtime.env` instead of using a single-file `.env` bind mount. Note that same-name values still present in startup `env_file`, `--env-file`, `docker run -e`, or Compose `environment:` can override the runtime file on restart; update or remove those startup overrides if you want WebUI-saved values to take over.
+Runtime config saved from the WebUI is written directly to the mounted `/app/data/runtime.env`, so it survives container deletion, recreation, and release updates. Release syncs must exclude the host `data/` directory; do not replace `runtime.env` with the root `.env` or use the root `.env` as the container runtime `env_file`, otherwise WebUI-saved AI settings can be overridden.
 
 Recommended host mappings:
 
@@ -550,17 +563,17 @@ Optional static asset override:
 
 ```bash
 # View running status
-docker-compose -f ./docker/docker-compose.yml ps
+docker compose --env-file .env -f ./docker/docker-compose.yml ps
 
 # View logs
-docker-compose -f ./docker/docker-compose.yml logs -f server
+docker compose --env-file .env -f ./docker/docker-compose.yml logs -f server
 
 # Stop services
-docker-compose -f ./docker/docker-compose.yml down
+docker compose --env-file .env -f ./docker/docker-compose.yml down
 
 # Rebuild image (after code update)
-docker-compose -f ./docker/docker-compose.yml build --no-cache
-docker-compose -f ./docker/docker-compose.yml up -d server
+docker compose --env-file .env -f ./docker/docker-compose.yml build --no-cache
+docker compose --env-file .env -f ./docker/docker-compose.yml up -d server
 ```
 
 ### Manual Image Build

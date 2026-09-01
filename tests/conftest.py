@@ -3,6 +3,10 @@
 
 from __future__ import annotations
 
+import os
+
+import pytest
+
 import asyncio
 import concurrent.futures
 import time
@@ -249,3 +253,21 @@ class _ThreadlessTestClient:
 
 fastapi.testclient.TestClient = _ThreadlessTestClient
 starlette.testclient.TestClient = _ThreadlessTestClient
+
+
+@pytest.fixture(autouse=True)
+def _isolate_auth_env():
+    """Prevent load_dotenv from leaking ADMIN_AUTH_ENABLED across tests."""
+    from tests.auth_test_support import reset_auth_globals
+
+    saved = {key: os.environ.get(key) for key in ("ADMIN_AUTH_ENABLED", "AUTH_MODE")}
+    os.environ.pop("ADMIN_AUTH_ENABLED", None)
+    os.environ.pop("AUTH_MODE", None)
+    reset_auth_globals()
+    yield
+    for key, value in saved.items():
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
+    reset_auth_globals()

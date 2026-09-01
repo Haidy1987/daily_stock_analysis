@@ -100,9 +100,20 @@ class TestStockIndexLoader(unittest.TestCase):
     def test_get_index_stock_name_returns_none_when_index_missing(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             missing_path = Path(temp_dir) / "stocks.index.json"
-            with patch.object(stock_index_loader, "get_stock_index_candidate_paths", return_value=(missing_path,)):
+            with patch.object(stock_index_loader, "get_stock_index_candidate_paths", return_value=(missing_path,)), \
+                 patch.object(stock_index_loader, "_load_stock_name_map_from_db", return_value={}):
                 self.assertEqual(stock_index_loader.get_stock_name_index_map(), {})
                 self.assertIsNone(stock_index_loader.get_index_stock_name("000001"))
+
+    def test_get_stock_name_index_map_falls_back_to_db_when_index_missing(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            missing_path = Path(temp_dir) / "stocks.index.json"
+            db_map = {"600519": "贵州茅台", "600519.SH": "贵州茅台"}
+
+            with patch.object(stock_index_loader, "get_stock_index_candidate_paths", return_value=(missing_path,)), \
+                 patch.object(stock_index_loader, "_load_stock_name_map_from_db", return_value=db_map):
+                self.assertEqual(stock_index_loader.get_stock_name_index_map(), db_map)
+                self.assertEqual(stock_index_loader.get_index_stock_name("600519"), "贵州茅台")
 
     def test_get_stock_name_index_map_skips_invalid_utf8_and_uses_next_candidate(self):
         with tempfile.TemporaryDirectory() as temp_dir:

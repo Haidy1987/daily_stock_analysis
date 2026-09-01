@@ -40,20 +40,41 @@ cd /opt/stock-analyzer
 # Copy and edit configuration file
 cp .env.example .env
 vim .env  # Fill in real API Keys and configuration
+
+# Initialize the writable runtime config on the first deployment; never overwrite data/ later
+mkdir -p data
+cp .env data/runtime.env
+chmod 600 data/runtime.env
 ```
 
 ### 3. One-Click Start
 
 ```bash
 # Build and start
-docker-compose -f ./docker/docker-compose.yml up -d
+docker compose --env-file .env -f ./docker/docker-compose.yml up -d
 
 # View logs
-docker-compose -f ./docker/docker-compose.yml logs -f
+docker compose --env-file .env -f ./docker/docker-compose.yml logs -f
 
 # View running status
-docker-compose -f ./docker/docker-compose.yml ps
+docker compose --env-file .env -f ./docker/docker-compose.yml ps
 ```
+
+### 3.1 Expose HTTPS through an existing Traefik instance
+
+If the server already runs Traefik and Traefik uses an external Docker network named `proxy`, use the optional override to register the HTTPS route:
+
+```bash
+# Set the actual hostname in .env
+DSA_DOMAIN=stock-app.example.com
+
+docker compose --env-file .env \
+  -f ./docker/docker-compose.yml \
+  -f ./docker/docker-compose.traefik.yml \
+  up -d server
+```
+
+The override only adds `server` to the `proxy` network and registers Traefik labels; it does not expose or start `analyzer`. Traefik must have the Docker provider, a `websecure` entrypoint, and an ACME resolver named `letsencrypt`.
 
 ### 3.1 Resource Recommendations
 
@@ -69,21 +90,21 @@ If you can only use `512M`, avoid starting both `server` and `analyzer`, and dis
 
 ```bash
 # Stop services
-docker-compose -f ./docker/docker-compose.yml down
+docker compose --env-file .env -f ./docker/docker-compose.yml down
 
 # Restart services
-docker-compose -f ./docker/docker-compose.yml restart
+docker compose --env-file .env -f ./docker/docker-compose.yml restart
 
 # Redeploy after code update
 git pull
-docker-compose -f ./docker/docker-compose.yml build --no-cache
-docker-compose -f ./docker/docker-compose.yml up -d
+docker compose --env-file .env -f ./docker/docker-compose.yml build --no-cache
+docker compose --env-file .env -f ./docker/docker-compose.yml up -d
 
 # Enter container for debugging
-docker-compose -f ./docker/docker-compose.yml exec -u dsa stock-analyzer bash
+docker compose --env-file .env -f ./docker/docker-compose.yml exec -u dsa stock-analyzer bash
 
 # Manually run analysis once
-docker-compose -f ./docker/docker-compose.yml exec -u dsa stock-analyzer python main.py --no-notify
+docker compose --env-file .env -f ./docker/docker-compose.yml exec -u dsa stock-analyzer python main.py --no-notify
 ```
 
 ### 5. Data Persistence
@@ -248,7 +269,7 @@ os.environ["https_proxy"] = "http://your-proxy:port"
 
 ```bash
 # Docker method
-docker-compose -f ./docker/docker-compose.yml logs -f --tail=100
+docker compose --env-file .env -f ./docker/docker-compose.yml logs -f --tail=100
 
 # Direct deployment
 tail -f /opt/stock-analyzer/logs/stock_analysis_*.log
@@ -282,7 +303,7 @@ find /opt/stock-analyzer/reports -mtime +30 -delete
 
 ```bash
 # Clear cache and rebuild
-docker-compose -f ./docker/docker-compose.yml build --no-cache
+docker compose --env-file .env -f ./docker/docker-compose.yml build --no-cache
 ```
 
 ### 2. API access timeout
@@ -326,7 +347,7 @@ mkdir -p /opt/stock-analyzer
 cd /opt/stock-analyzer
 git clone <your-repo-url> .
 tar -xzvf stock-analyzer-backup.tar.gz
-docker-compose -f ./docker/docker-compose.yml up -d
+docker compose --env-file .env -f ./docker/docker-compose.yml up -d
 ```
 
 ---

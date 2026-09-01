@@ -272,6 +272,12 @@ class AlertWorkerTestCase(unittest.TestCase):
         payload.update(overrides)
         return self.service.create_rule(payload)
 
+    def _seed_watchlist(self, codes: list[str]) -> None:
+        from src.auth import resolve_service_user_id
+        from src.repositories.watchlist_repo import WatchlistRepository
+
+        WatchlistRepository().replace_codes(resolve_service_user_id(), codes)
+
     def _triggers(self, **filters) -> list[dict]:
         return self.service.list_triggers(page_size=100, **filters)["items"]
 
@@ -1660,9 +1666,9 @@ class AlertWorkerTestCase(unittest.TestCase):
             parameters={"direction": "above", "price": 10},
             cooldown_policy={"cooldown_seconds": 60},
         )
+        self._seed_watchlist(["600519", "000001"])
         notifier = self._notifier()
         config = self._config()
-        config.stock_list = ["600519", "000001"]
         now = {"value": 1000.0}
 
         async def _quote(_monitor, _stock_code):
@@ -1699,8 +1705,8 @@ class AlertWorkerTestCase(unittest.TestCase):
             alert_type="price_cross",
             parameters={"direction": "above", "price": 10},
         )
+        self._seed_watchlist([])
         config = self._config()
-        config.stock_list = []
         worker = AlertWorker(config_provider=lambda: config, service=self.service, notifier=self._notifier())
 
         stats = worker.run_once()
@@ -1721,7 +1727,7 @@ class AlertWorkerTestCase(unittest.TestCase):
         )
         row = self.service.repo.get_rule(rule["id"])
         config = self._config()
-        config.stock_list = [f"{index:06d}" for index in range(1, 102)]
+        self._seed_watchlist([f"{index:06d}" for index in range(1, 102)])
 
         dry_run_payloads = self.service.build_runtime_payloads(row, config=config)
         worker_payloads = self.service.build_runtime_payloads(row, config=config, include_overflow_payload=False)

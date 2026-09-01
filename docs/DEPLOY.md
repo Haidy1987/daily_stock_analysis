@@ -40,20 +40,41 @@ cd /opt/stock-analyzer
 # 复制并编辑配置文件
 cp .env.example .env
 vim .env  # 填入真实的 API Key 等配置
+
+# 首次部署初始化可写运行时配置文件；后续不要覆盖 data/ 目录
+mkdir -p data
+cp .env data/runtime.env
+chmod 600 data/runtime.env
 ```
 
 ### 3. 一键启动
 
 ```bash
 # 构建并启动（同时包含定时分析和 Web 界面服务）
-docker-compose -f ./docker/docker-compose.yml up -d
+docker compose --env-file .env -f ./docker/docker-compose.yml up -d
 
 # 查看日志
-docker-compose -f ./docker/docker-compose.yml logs -f
+docker compose --env-file .env -f ./docker/docker-compose.yml logs -f
 
 # 查看运行状态
-docker-compose -f ./docker/docker-compose.yml ps
+docker compose --env-file .env -f ./docker/docker-compose.yml ps
 ```
+
+### 3.1 使用已有 Traefik 暴露 HTTPS
+
+如果服务器已经运行 Traefik，并且 Traefik 使用外部 Docker 网络 `proxy`，可通过可选 override 注册 HTTPS 路由：
+
+```bash
+# 在 .env 中设置实际域名
+DSA_DOMAIN=stock-app.example.com
+
+docker compose --env-file .env \
+  -f ./docker/docker-compose.yml \
+  -f ./docker/docker-compose.traefik.yml \
+  up -d server
+```
+
+该 override 只为 `server` 加入 `proxy` 网络并注册 Traefik labels，不会暴露或启动 `analyzer`。Traefik 需要配置 Docker provider、`websecure` entrypoint，以及名为 `letsencrypt` 的 ACME resolver。
 
 启动成功后，在浏览器输入 `http://服务器公网IP:8000` 即可打开 Web 管理界面。如果打不开，记得先在云服务器控制台的「安全组」里放行 8000 端口。
 
@@ -73,21 +94,21 @@ docker-compose -f ./docker/docker-compose.yml ps
 
 ```bash
 # 停止服务
-docker-compose -f ./docker/docker-compose.yml down
+docker compose --env-file .env -f ./docker/docker-compose.yml down
 
 # 重启服务
-docker-compose -f ./docker/docker-compose.yml restart
+docker compose --env-file .env -f ./docker/docker-compose.yml restart
 
-# 更新代码后重新部署
+# 更新代码后重新部署；保留 data/runtime.env 中的 WebUI/AI 配置
 git pull
-docker-compose -f ./docker/docker-compose.yml build --no-cache
-docker-compose -f ./docker/docker-compose.yml up -d
+docker compose --env-file .env -f ./docker/docker-compose.yml build --no-cache
+docker compose --env-file .env -f ./docker/docker-compose.yml up -d
 
 # 进入容器调试
-docker-compose -f ./docker/docker-compose.yml exec -u dsa stock-analyzer bash
+docker compose --env-file .env -f ./docker/docker-compose.yml exec -u dsa stock-analyzer bash
 
 # 手动执行一次分析
-docker-compose -f ./docker/docker-compose.yml exec -u dsa stock-analyzer python main.py --no-notify
+docker compose --env-file .env -f ./docker/docker-compose.yml exec -u dsa stock-analyzer python main.py --no-notify
 ```
 
 ### 5. 数据持久化
@@ -260,7 +281,7 @@ os.environ["https_proxy"] = "http://your-proxy:port"
 
 ```bash
 # Docker 方式
-docker-compose -f ./docker/docker-compose.yml logs -f --tail=100
+docker compose --env-file .env -f ./docker/docker-compose.yml logs -f --tail=100
 
 # 直接部署
 tail -f /opt/stock-analyzer/logs/stock_analysis_*.log
@@ -294,7 +315,7 @@ find /opt/stock-analyzer/reports -mtime +30 -delete
 
 ```bash
 # 清理缓存重新构建
-docker-compose -f ./docker/docker-compose.yml build --no-cache
+docker compose --env-file .env -f ./docker/docker-compose.yml build --no-cache
 ```
 
 ### 2. API 访问超时
@@ -332,9 +353,9 @@ deploy:
 
 - **Docker 部署**：执行以下命令重新构建镜像（确保前端已正确打包进镜像）：
   ```bash
-  docker-compose -f ./docker/docker-compose.yml down
-  docker-compose -f ./docker/docker-compose.yml build --no-cache
-  docker-compose -f ./docker/docker-compose.yml up -d
+  docker compose --env-file .env -f ./docker/docker-compose.yml down
+  docker compose --env-file .env -f ./docker/docker-compose.yml build --no-cache
+  docker compose --env-file .env -f ./docker/docker-compose.yml up -d
   ```
   构建完成后刷新浏览器缓存（`Ctrl+Shift+R`）再访问。
 
@@ -368,7 +389,7 @@ mkdir -p /opt/stock-analyzer
 cd /opt/stock-analyzer
 git clone <your-repo-url> .
 tar -xzvf stock-analyzer-backup.tar.gz
-docker-compose -f ./docker/docker-compose.yml up -d
+docker compose --env-file .env -f ./docker/docker-compose.yml up -d
 ```
 
 ---

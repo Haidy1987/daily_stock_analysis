@@ -187,6 +187,7 @@ from src.services.stock_index_remote_service import (
     refresh_remote_stock_index_cache,
     settings_from_config,
 )
+from src.services.a_share_universe.scheduler import run_a_share_universe_sync_job
 
 
 _STOCK_INDEX_FILENAME = "stocks.index.json"
@@ -211,6 +212,22 @@ async def _refresh_stock_index_cache_in_background(reason: str) -> None:
         raise
     except Exception as exc:  # noqa: BLE001 - index refresh must stay best-effort.
         logger.warning("[stock-index] background refresh failed (%s): %s", reason, exc)
+
+
+async def _maybe_run_a_share_startup_sync() -> None:
+    try:
+        from src.config import get_config
+
+        config = get_config()
+        if not getattr(config, "a_share_universe_sync_enabled", False):
+            return
+        if not getattr(config, "a_share_universe_sync_on_startup", False):
+            return
+        await run_in_threadpool(run_a_share_universe_sync_job, config)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - startup sync must stay best-effort
+        logger.warning("[A-share sync] startup sync failed: %s", exc)
 
 
 def _schedule_stock_index_background_refresh(app: FastAPI, reason: str) -> None:
@@ -293,9 +310,28 @@ async def app_lifespan(app: FastAPI):
         runtime_scheduler=app.state.runtime_scheduler_service,
     )
     _schedule_stock_index_background_refresh(app, "startup")
+    startup_sync_task = None
+    try:
+        from src.config import get_config
+
+        config = get_config()
+        if getattr(config, "a_share_universe_sync_enabled", False) and getattr(
+            config, "a_share_universe_sync_on_startup", False
+        ):
+            startup_sync_task = asyncio.create_task(_maybe_run_a_share_startup_sync())
+            app.state.a_share_startup_sync_task = startup_sync_task
+    except Exception as exc:  # noqa: BLE001 - startup hook must not block API boot
+        logger.warning("[A-share sync] unable to schedule startup sync: %s", exc)
     try:
         yield
     finally:
+        startup_sync_task = getattr(app.state, "a_share_startup_sync_task", None)
+        if startup_sync_task is not None and not startup_sync_task.done():
+            startup_sync_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await startup_sync_task
+        if hasattr(app.state, "a_share_startup_sync_task"):
+            delattr(app.state, "a_share_startup_sync_task")
         refresh_task = getattr(app.state, "stock_index_refresh_task", None)
         if refresh_task is not None and not refresh_task.done():
             refresh_task.cancel()

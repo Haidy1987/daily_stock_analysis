@@ -222,6 +222,8 @@ gh run view <run_id> --log-failed
 - 工作流 / 发布 / 打包：
   - 修改自动 tag、Release、Docker 发布、日常分析或桌面端打包流程时，要评估触发条件、产物路径、权限边界和回滚方式。
   - 自动 tag 默认保持 opt-in：只有 commit title 含 `#patch`、`#minor`、`#major` 才触发版本号更新，除非需求明确要求改变发布策略。
+  - Docker WebUI 的运行时配置统一持久化到宿主机 `data/runtime.env`（容器内 `/app/data/runtime.env`）；首次部署从 `.env` 初始化，后续发布同步代码时必须排除 `data/`，不得覆盖或删除该文件。
+  - Docker Compose 发布必须使用 `--env-file .env` 解析端口、域名等部署变量，但容器运行时配置来源应保持为 `data/runtime.env`；不要重新把宿主机 `.env` 作为容器运行时 `env_file`，以免覆盖 WebUI 保存的 AI 配置。
 
 ## 8. Issue / PR / Skill 工作流
 

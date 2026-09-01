@@ -57,7 +57,8 @@ def test_docker_compose_injects_env_without_single_file_env_mount() -> None:
     compose = yaml.safe_load(compose_text)
     common = compose["x-common"]
 
-    assert "../.env" in common["env_file"]
+    assert "../data/runtime.env" in common["env_file"]
+    assert "../.env" not in common["env_file"]
     assert "../.env:/app/.env" not in common["volumes"]
     assert not any(str(volume).startswith("../.env:") for volume in common["volumes"])
     assert "../longbridge_tokens:/home/dsa/.longbridge" in common["volumes"]
@@ -108,8 +109,8 @@ def test_docker_guides_do_not_recommend_single_file_env_bind_mount() -> None:
 
 
 def test_documented_compose_exec_commands_run_as_dsa() -> None:
-    safe_exec_prefix = "docker-compose -f ./docker/docker-compose.yml exec -u dsa"
-    unsafe_exec_prefix = "docker-compose -f ./docker/docker-compose.yml exec"
+    safe_exec_prefix = "docker compose --env-file .env -f ./docker/docker-compose.yml exec -u dsa"
+    unsafe_exec_prefix = "docker compose --env-file .env -f ./docker/docker-compose.yml exec"
 
     for doc_path in ("docs/DEPLOY.md", "docs/DEPLOY_EN.md"):
         doc = (REPO_ROOT / doc_path).read_text(encoding="utf-8")

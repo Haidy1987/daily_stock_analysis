@@ -10,6 +10,7 @@ from typing import Any, Dict, Literal, Mapping, Optional
 from data_provider.base import normalize_stock_code
 
 from src.analyzer import AnalysisResult
+from src.auth import resolve_service_user_id
 from src.core.trading_calendar import get_market_for_stock
 from src.schemas.decision_action import build_action_fields, normalize_decision_action
 from src.schemas.decision_scale import (
@@ -43,7 +44,7 @@ _CONFIDENCE_MAP = {
 def build_decision_signal_payload_from_report(
     result: AnalysisResult,
     *,
-    user_id: int,
+    user_id: Optional[int] = None,
     context_snapshot: Dict[str, Any] | None = None,
     portfolio_context: Dict[str, Any] | None = None,
     source_report_id: int | None = None,
@@ -53,6 +54,7 @@ def build_decision_signal_payload_from_report(
     profile_source: ProfileSource,
 ) -> Dict[str, Any] | None:
     """Build a DecisionSignal payload from a completed stock analysis report."""
+    user_id = resolve_service_user_id(user_id)
 
     if result is None or not getattr(result, "success", True):
         return None
@@ -177,7 +179,7 @@ def build_decision_signal_payload_from_report(
 def extract_and_persist_from_analysis_result(
     result: AnalysisResult,
     *,
-    user_id: int,
+    user_id: Optional[int] = None,
     context_snapshot: Dict[str, Any] | None = None,
     portfolio_context: Dict[str, Any] | None = None,
     source_report_id: int | None = None,
@@ -188,6 +190,7 @@ def extract_and_persist_from_analysis_result(
     service: Optional[DecisionSignalService] = None,
 ) -> Dict[str, Any] | None:
     """Best-effort extract and persist a DecisionSignal from an analysis result."""
+    user_id = resolve_service_user_id(user_id)
 
     try:
         payload = build_decision_signal_payload_from_report(
