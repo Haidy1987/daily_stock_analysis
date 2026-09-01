@@ -61,13 +61,64 @@
 - Loader 回退：`src/data/stock_index_loader.py`
 - 搜索 API：`GET /api/v1/universe/a-share/search?q=茅台&limit=20`
 
-```bash
-# 从 universe 表生成 Web 索引并同步 static 副本
-python scripts/refresh_stock_index.py --source db
+## 代码入口（Phase 4）
 
-# 仅生成索引（可指定合并来源）
-python scripts/generate_index_from_db.py
-python scripts/generate_index_from_db.py --no-merge
+- 调度任务：`src/services/a_share_universe/scheduler.py`
+- Runtime 集成：`src/services/runtime_scheduler.py`（Web/API `--serve` 长进程）
+- CLI 定时：`python main.py --schedule` 会注册同名后台任务
+- GitHub Actions：`.github/workflows/a-share-universe-sync.yml`（需仓库 Variable `A_SHARE_UNIVERSE_SYNC_ENABLED=true`）
+
+### 启用定时同步
+
+在 `data/runtime.env`（Docker）或 `.env`（本地）中设置：
+
+```bash
+A_SHARE_UNIVERSE_SYNC_ENABLED=true
+A_SHARE_UNIVERSE_SYNC_MODE=full              # universe-only | snapshot | full
+A_SHARE_UNIVERSE_SYNC_INTERVAL_HOURS=24
+A_SHARE_UNIVERSE_SYNC_RUN_IMMEDIATELY=true   # 启动后立即跑一轮
+A_SHARE_UNIVERSE_INDEX_REFRESH_ENABLED=true  # 同步成功后写 stocks.index.json
+A_SHARE_UNIVERSE_TRADING_DAY_CHECK_ENABLED=true
+```
+
+**行为说明：**
+
+- `A_SHARE_UNIVERSE_SYNC_ENABLED=true` 且 `SCHEDULE_ENABLED=false` 时，Web/API 进程仍会启动**仅含 A 股同步**的后台调度器（不触发每日分析）。
+- `python main.py --schedule` 与 `--serve --schedule` 会把 A 股同步任务与分析定时任务并行注册。
+- `A_SHARE_UNIVERSE_SYNC_ON_STARTUP=true` 时，API 启动后会额外异步执行一轮同步（与 interval 定时互补）。
+- 同步报告仍写入 `data/a_share_sync/last_report.json`；索引产物为 `apps/dsa-web/public/stocks.index.json` 与 `static/stocks.index.json`。
+
+### Docker 示例
+
+```bash
+cp .env data/runtime.env
+# 编辑 data/runtime.env，开启 A_SHARE_UNIVERSE_* 配置
+docker compose --env-file .env -f docker/docker-compose.yml up -d server
+```
+
+`server` 服务使用 `--serve-only`；开启 `A_SHARE_UNIVERSE_SYNC_ENABLED` 后由 runtime scheduler 负责周期同步。
+
+### GitHub Actions（可选）
+
+1. 在仓库 **Settings → Secrets and variables → Actions → Variables** 添加 `A_SHARE_UNIVERSE_SYNC_ENABLED=true`
+2. 可选：`A_SHARE_UNIVERSE_SOURCE=eastmoney`、`A_SHARE_UNIVERSE_SYNC_MODE=full`
+3. 工作流默认工作日 UTC 09:30（北京时间 17:30）运行；也可手动 `workflow_dispatch`
+
+> 该 workflow 与分析 workflow 独立；未设置 Variable 时 job 会自动跳过。
+
+### 观测与排障
+
+| 路径 | 说明 |
+| --- | --- |
+| `data/a_share_sync/last_report.json` | 最近一次同步统计、字段覆盖率 |
+| `data/a_share_sync/checkpoint.json` | 快照补充断点（`--resume` / 定时任务默认 resume） |
+| 应用日志 `[A-share sync]` | 同步跳过/成功/索引刷新结果 |
+| `GET /api/v1/universe/a-share/search` | 验证主数据是否可查 |
+
+```bash
+# 手动全量同步 + 索引刷新
+python scripts/sync_a_share_universe.py --mode full
+python scripts/refresh_stock_index.py --source db
 ```
 
 ### CLI 用法
@@ -111,8 +162,15 @@ repo.search("茅台", limit=20)
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
-| `A_SHARE_UNIVERSE_SYNC_ENABLED` | `false` | Phase 1+ 启用采集调度 |
+| `A_SHARE_UNIVERSE_SYNC_ENABLED` | `false` | 启用后台定时同步（可与分析 schedule 独立） |
 | `A_SHARE_UNIVERSE_SOURCE` | `eastmoney` | `eastmoney` / `tushare` |
+| `A_SHARE_UNIVERSE_SYNC_MODE` | `full` | `universe-only` / `snapshot` / `full` |
+| `A_SHARE_UNIVERSE_SYNC_INTERVAL_HOURS` | `24` | 后台同步间隔（小时） |
+| `A_SHARE_UNIVERSE_SYNC_RUN_IMMEDIATELY` | `true` | 启用后首次启动立即同步 |
+| `A_SHARE_UNIVERSE_SYNC_RESUME` | `true` | 定时任务默认从 checkpoint 继续 |
+| `A_SHARE_UNIVERSE_INDEX_REFRESH_ENABLED` | `true` | 同步成功后刷新索引 JSON |
+| `A_SHARE_UNIVERSE_TRADING_DAY_CHECK_ENABLED` | `true` | snapshot/full 在非交易日跳过 |
+| `A_SHARE_UNIVERSE_SYNC_ON_STARTUP` | `false` | API 启动时额外跑一轮 |
 | `A_SHARE_UNIVERSE_WORKERS` | `6` | 个股补充接口并发 |
 | `A_SHARE_UNIVERSE_MIN_INTERVAL_SEC` | `1.0` | 请求最小间隔 |
 | `A_SHARE_UNIVERSE_HISTORY_RETENTION_DAYS` | `0` | `0`=仅保留最新快照 |
@@ -134,8 +192,8 @@ Phase 0 只注册配置，不启动采集。
 1. **Phase 0**（当前）：Schema + Repository + 配置 + 文档
 2. **Phase 1**：东方财富/Tushare universe 主数据采集 CLI
 3. **Phase 2**：快照字段 + 业绩报表合并 + checkpoint/resume + 同步报告
-4. **Phase 3**（当前）：自动补全索引生成、loader DB 回退与 universe 搜索 API
-5. **Phase 4**：调度 / Docker / 运维文档
+4. **Phase 3**：自动补全索引生成、loader DB 回退与 universe 搜索 API
+5. **Phase 4**（当前）：定时调度、Docker/GitHub Actions 运维与观测文档
 
 ## 排障
 

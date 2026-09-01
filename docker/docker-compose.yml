@@ -38,6 +38,11 @@ x-common: &common
     - TZ=Asia/Shanghai
     # WebUI/API 保存的运行时配置持久化在 data volume 中
     - ENV_FILE=/app/data/runtime.env
+    # A 股全量同步（可选；写入 data/runtime.env 后重启生效）
+    # - A_SHARE_UNIVERSE_SYNC_ENABLED=true
+    # - A_SHARE_UNIVERSE_SYNC_MODE=full
+    # - A_SHARE_UNIVERSE_SYNC_INTERVAL_HOURS=24
+    # - A_SHARE_UNIVERSE_SYNC_ON_STARTUP=true
 
     # Web/API service bind address (must be 0.0.0.0 inside container)
     - WEBUI_HOST=0.0.0.0

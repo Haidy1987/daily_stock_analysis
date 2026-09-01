@@ -1,0 +1,71 @@
+name: A-share Universe Sync
+
+on:
+  schedule:
+    # 北京时间 17:30（UTC 09:30），工作日；在每日分析前同步 universe/快照
+    - cron: '30 9 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: '同步模式'
+        required: true
+        default: 'full'
+        type: choice
+        options:
+          - full
+          - snapshot
+          - universe-only
+      refresh_index:
+        description: '同步后刷新 stocks.index.json'
+        required: false
+        default: true
+        type: boolean
+
+concurrency:
+  group: a-share-universe-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: ${{ vars.A_SHARE_UNIVERSE_SYNC_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v5
+
+      - name: 设置 Python 环境
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 安装依赖
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 创建必要目录
+        run: mkdir -p data logs data/a_share_sync
+
+      - name: 同步 A 股 universe
+        env:
+          A_SHARE_UNIVERSE_SOURCE: ${{ vars.A_SHARE_UNIVERSE_SOURCE || 'eastmoney' }}
+          SYNC_MODE: ${{ github.event.inputs.mode || vars.A_SHARE_UNIVERSE_SYNC_MODE || 'full' }}
+          REFRESH_INDEX: ${{ github.event.inputs.refresh_index != false && 'true' || 'false' }}
+          TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
+        run: |
+          python scripts/sync_a_share_universe.py --mode "${SYNC_MODE}"
+          if [ "${REFRESH_INDEX}" = "true" ]; then
+            python scripts/refresh_stock_index.py --source db
+          fi
+
+      - name: 上传同步报告
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: a-share-universe-sync-${{ github.run_number }}
+          path: |
+            data/a_share_sync/
+          retention-days: 14

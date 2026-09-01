@@ -738,6 +738,13 @@ class Config:
     a_share_universe_workers: int = 6
     a_share_universe_min_interval_sec: float = 1.0
     a_share_universe_history_retention_days: int = 0
+    a_share_universe_sync_mode: str = "full"
+    a_share_universe_sync_interval_hours: int = 24
+    a_share_universe_sync_run_immediately: bool = True
+    a_share_universe_sync_resume: bool = True
+    a_share_universe_index_refresh_enabled: bool = True
+    a_share_universe_trading_day_check_enabled: bool = True
+    a_share_universe_sync_on_startup: bool = False
 
     # === AlphaSift optional stock screening integration ===
     alphasift_enabled: bool = False
@@ -2115,6 +2122,35 @@ class Config:
                 0,
                 field_name='A_SHARE_UNIVERSE_HISTORY_RETENTION_DAYS',
                 minimum=0,
+            ),
+            a_share_universe_sync_mode=(
+                os.getenv('A_SHARE_UNIVERSE_SYNC_MODE', 'full').strip().lower() or 'full'
+            ),
+            a_share_universe_sync_interval_hours=parse_env_int(
+                os.getenv('A_SHARE_UNIVERSE_SYNC_INTERVAL_HOURS'),
+                24,
+                field_name='A_SHARE_UNIVERSE_SYNC_INTERVAL_HOURS',
+                minimum=1,
+            ),
+            a_share_universe_sync_run_immediately=parse_env_bool(
+                os.getenv('A_SHARE_UNIVERSE_SYNC_RUN_IMMEDIATELY'),
+                default=True,
+            ),
+            a_share_universe_sync_resume=parse_env_bool(
+                os.getenv('A_SHARE_UNIVERSE_SYNC_RESUME'),
+                default=True,
+            ),
+            a_share_universe_index_refresh_enabled=parse_env_bool(
+                os.getenv('A_SHARE_UNIVERSE_INDEX_REFRESH_ENABLED'),
+                default=True,
+            ),
+            a_share_universe_trading_day_check_enabled=parse_env_bool(
+                os.getenv('A_SHARE_UNIVERSE_TRADING_DAY_CHECK_ENABLED'),
+                default=True,
+            ),
+            a_share_universe_sync_on_startup=parse_env_bool(
+                os.getenv('A_SHARE_UNIVERSE_SYNC_ON_STARTUP'),
+                default=False,
             ),
             alphasift_enabled=parse_env_bool(os.getenv('ALPHASIFT_ENABLED'), default=False),
             alphasift_install_spec=(

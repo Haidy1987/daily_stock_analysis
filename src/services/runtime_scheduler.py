@@ -13,6 +13,7 @@ from typing import Any, Callable, Dict, List, Optional, Set
 
 from src.config import Config, get_config
 from src.scheduler import Scheduler, normalize_schedule_times
+from src.services.a_share_universe.scheduler import build_a_share_universe_background_tasks
 
 logger = logging.getLogger(__name__)
 CLI_SCHEDULER_OWNER_ENV = "DSA_CLI_SCHEDULER_OWNS_SCHEDULE"
@@ -208,10 +209,59 @@ class RuntimeSchedulerService:
     def _is_schedule_enabled(self, config: Config) -> bool:
         return self._force_enabled or bool(getattr(config, "schedule_enabled", False))
 
+    def _is_a_share_sync_enabled(self, config: Config) -> bool:
+        return bool(getattr(config, "a_share_universe_sync_enabled", False))
+
+    def _should_run_scheduler(self, config: Config) -> bool:
+        return self._is_schedule_enabled(config) or self._is_a_share_sync_enabled(config)
+
     def _current_background_tasks(self, config: Config) -> List[Dict[str, Any]]:
         if self._background_tasks_provider is not None:
             return self._background_tasks_provider(config)
-        return self._current_agent_event_monitor_background_tasks(config)
+        tasks = self._current_agent_event_monitor_background_tasks(config)
+        tasks.extend(self._current_a_share_universe_background_tasks(config))
+        return tasks
+
+    def _current_a_share_universe_background_tasks(self, config: Config) -> List[Dict[str, Any]]:
+        name = "a_share_universe_sync"
+        if not self._is_a_share_sync_enabled(config):
+            self._background_task_cache.pop(name, None)
+            self._background_task_registered_names.discard(name)
+            return []
+
+        cached = self._background_task_cache.get(name)
+        if cached is None:
+            entries = build_a_share_universe_background_tasks(
+                config,
+                config_provider=self._reload_config,
+            )
+            if not entries:
+                self._background_task_cache.pop(name, None)
+                self._background_task_registered_names.discard(name)
+                return []
+            cached = dict(entries[0])
+            cached["name"] = name
+            self._background_task_cache[name] = cached
+            interval_seconds = int(cached["interval_seconds"])
+        else:
+            interval_hours = max(
+                1,
+                int(getattr(config, "a_share_universe_sync_interval_hours", 24)),
+            )
+            interval_seconds = interval_hours * 3600
+            cached["interval_seconds"] = interval_seconds
+
+        run_immediately = (
+            bool(cached.get("run_immediately", False))
+            and name not in self._background_task_registered_names
+        )
+        self._background_task_registered_names.add(name)
+        return [{
+            "task": cached["task"],
+            "interval_seconds": interval_seconds,
+            "run_immediately": run_immediately,
+            "name": name,
+        }]
 
     def _current_agent_event_monitor_background_tasks(self, config: Config) -> List[Dict[str, Any]]:
         name = "agent_event_monitor"
@@ -267,7 +317,7 @@ class RuntimeSchedulerService:
                 self.stop()
                 return
             config = self._config_provider()
-            if not self._is_schedule_enabled(config):
+            if not self._should_run_scheduler(config):
                 self.stop()
                 return
             background_tasks = self._current_background_tasks(config)
@@ -282,10 +332,11 @@ class RuntimeSchedulerService:
                 schedule_times_provider=self._current_times,
                 register_signals=False,
             )
-            if run_immediately and self._run_immediately_in_background:
-                scheduler.set_daily_task(self._run_analysis_once, run_immediately=False)
-            else:
-                scheduler.set_daily_task(self._run_analysis_once, run_immediately=run_immediately)
+            if self._is_schedule_enabled(config):
+                if run_immediately and self._run_immediately_in_background:
+                    scheduler.set_daily_task(self._run_analysis_once, run_immediately=False)
+                else:
+                    scheduler.set_daily_task(self._run_analysis_once, run_immediately=run_immediately)
             for entry in background_tasks:
                 scheduler.add_background_task(
                     entry["task"],
@@ -293,7 +344,7 @@ class RuntimeSchedulerService:
                     run_immediately=entry.get("run_immediately", False),
                     name=entry.get("name"),
                 )
-            if run_immediately and self._run_immediately_in_background:
+            if run_immediately and self._run_immediately_in_background and self._is_schedule_enabled(config):
                 self._run_in_background_thread(self._run_analysis_once)
             thread = threading.Thread(
                 target=scheduler.run,
@@ -325,7 +376,7 @@ class RuntimeSchedulerService:
             self.stop()
             return
         config = self._config_provider()
-        if self._is_schedule_enabled(config):
+        if self._should_run_scheduler(config):
             self.start(run_immediately=run_immediately)
         else:
             self.stop()

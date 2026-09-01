@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [新功能] A 股全量主数据 Phase 4：新增后台定时同步（runtime/CLI schedule）、同步后索引刷新、Docker 配置示例、可选 GitHub Actions workflow 与运维文档。
 - [新功能] A 股全量主数据 Phase 3：新增基于 `a_share_universe` 的索引生成（`scripts/generate_index_from_db.py`、`refresh_stock_index.py --source db`）、`stock_index_loader` DB 回退与 `GET /api/v1/universe/a-share/search` 搜索 API。
 - [新功能] A 股全量主数据 Phase 2：新增东方财富快照采集（spot + 业绩报表 + 可选个股补充）、checkpoint/resume、`snapshot/full` CLI 模式与 `data/a_share_sync/last_report.json` 同步报告。
 - [新功能] A 股全量主数据 Phase 1：新增东方财富/Tushare universe 采集 Provider、`AShareUniverseSyncService` 与 `scripts/sync_a_share_universe.py` CLI。
