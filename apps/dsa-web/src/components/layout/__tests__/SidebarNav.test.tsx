@@ -72,7 +72,7 @@ describe('SidebarNav', () => {
 
     await screen.findByRole('link', { name: '选股' });
     const hrefs = screen.getAllByRole('link').map((link) => link.getAttribute('href'));
-    expect(hrefs.slice(0, 6)).toEqual(['/', '/chat', '/screening', '/technical-chart', '/portfolio', '/decision-signals']);
+    expect(hrefs.slice(0, 7)).toEqual(['/', '/chat', '/screening', '/technical-chart', '/a-share-universe', '/portfolio', '/decision-signals']);
   });
 
   it('shows technical chart navigation after screening and before portfolio when AlphaSift is disabled', async () => {
@@ -87,7 +87,7 @@ describe('SidebarNav', () => {
     const chartLink = await screen.findByRole('link', { name: '技术图表' });
     expect(chartLink).toHaveAttribute('href', '/technical-chart');
     const hrefs = screen.getAllByRole('link').map((link) => link.getAttribute('href'));
-    expect(hrefs.slice(0, 4)).toEqual(['/', '/chat', '/technical-chart', '/portfolio']);
+    expect(hrefs.slice(0, 5)).toEqual(['/', '/chat', '/technical-chart', '/a-share-universe', '/portfolio']);
   });
 
   it('refreshes the screening navigation item after any config save event', async () => {

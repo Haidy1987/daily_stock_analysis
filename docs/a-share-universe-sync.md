@@ -207,3 +207,14 @@ Phase 0 只注册配置，不启动采集。
 
 - Phase 0 无运行时行为变化；删除新表不影响现有 `stock_daily` 与分析主流程。
 - 停用 `A_SHARE_UNIVERSE_SYNC_ENABLED`（默认已关闭）即可避免后续 Phase 调度。
+
+## Web 手动采集
+
+默认 **不自动抓取**（`A_SHARE_UNIVERSE_SYNC_ENABLED=false`）。管理员可在 Web **A 股列表** 页手动触发全量采集：
+
+- 路由：`/a-share-universe`（侧边栏「A 股列表」）
+- 搜索 API：`GET /api/v1/universe/a-share/search?q=&limit=&offset=`（`q` 可留空分页浏览）
+- 状态 API：`GET /api/v1/universe/a-share/stats`
+- 手动采集：`POST /api/v1/universe/a-share/sync`（需 admin；202 接受，409 运行中，429 冷却中）
+- 冷却：成功采集后 **60 分钟** 内不可重复提交；状态持久化于 `data/a_share_sync/manual_sync_state.json`
+- 手动采集 **不依赖** `A_SHARE_UNIVERSE_SYNC_ENABLED=true`，直接调用 `run_a_share_universe_sync_job`

@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -33,7 +33,9 @@ class AShareUniverseItem(BaseModel):
 class AShareUniverseSearchResponse(BaseModel):
     query: str = Field(..., description="原始查询关键字")
     items: List[AShareUniverseItem] = Field(default_factory=list, description="匹配结果")
-    total: int = Field(..., description="返回条数")
+    total: int = Field(..., description="匹配总数（用于分页）")
+    offset: int = Field(0, description="分页偏移")
+    limit: int = Field(20, description="分页大小")
 
     model_config = ConfigDict(json_schema_extra={
         "example": {
@@ -50,5 +52,29 @@ class AShareUniverseSearchResponse(BaseModel):
                 }
             ],
             "total": 1,
+            "offset": 0,
+            "limit": 20,
         }
     })
+
+
+class AShareUniverseStatsResponse(BaseModel):
+    total_count: int = Field(..., description="活跃 A 股数量")
+    total_including_inactive: int = Field(..., description="含 inactive 的总数")
+    sync_status: str = Field(..., description="idle | running | cooldown")
+    cooldown_seconds: int = Field(..., description="手动采集冷却秒数")
+    cooldown_remaining_seconds: int = Field(0, description="剩余冷却秒数")
+    next_available_at: Optional[str] = Field(None, description="下次可采集时间 ISO")
+    last_triggered_at: Optional[str] = None
+    last_completed_at: Optional[str] = None
+    last_success_at: Optional[str] = None
+    last_error: Optional[str] = None
+    last_report: Dict[str, Any] = Field(default_factory=dict)
+    manual_only: bool = Field(True, description="当前产品语义：仅手动采集")
+    auto_sync_enabled: bool = Field(False, description="后台自动同步是否开启")
+
+
+class AShareUniverseManualSyncResponse(BaseModel):
+    accepted: bool = Field(True, description="是否已接受手动采集任务")
+    message: str = Field(..., description="提示信息")
+    sync_status: str = Field("running", description="接受后的同步状态")

@@ -27,6 +27,7 @@ const StockScreeningPage = lazyWithRetry(() => import('./pages/StockScreeningPag
 const AccountPage = lazyWithRetry(() => import('./pages/AccountPage'), 'pages/AccountPage');
 const AdminUsersPage = lazyWithRetry(() => import('./pages/AdminUsersPage'), 'pages/AdminUsersPage');
 const TechnicalChartPage = lazyWithRetry(() => import('./pages/TechnicalChartPage'), 'pages/TechnicalChartPage');
+const AShareUniversePage = lazyWithRetry(() => import('./pages/AShareUniversePage'), 'pages/AShareUniversePage');
 
 const AppContent: React.FC = () => {
   const location = useLocation();
@@ -89,6 +90,7 @@ const AppContent: React.FC = () => {
         <Route path="/decision-signals" element={<DecisionSignalsPage />} />
         <Route path="/screening" element={<StockScreeningPage />} />
         <Route path="/technical-chart" element={<TechnicalChartPage />} />
+        <Route path="/a-share-universe" element={<AShareUniversePage />} />
         <Route path="/backtest" element={<BacktestPage />} />
         <Route path="/alerts" element={<AlertsPage />} />
         <Route path="/usage" element={<TokenUsagePage />} />

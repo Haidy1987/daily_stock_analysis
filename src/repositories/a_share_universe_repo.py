@@ -199,41 +199,74 @@ class AShareUniverseRepository:
                 query = query.where(AShareUniverse.active.is_(True))
             return int(session.execute(query).scalar() or 0)
 
+    def _search_where_clause(self, query_text: str, *, active_only: bool = True):
+        keyword = self._normalize_search_keyword(query_text)
+        conditions = []
+        if active_only:
+            conditions.append(AShareUniverse.active.is_(True))
+
+        if keyword:
+            if keyword.isdigit():
+                conditions.append(AShareUniverse.code.like(f"{keyword}%"))
+            else:
+                conditions.append(
+                    or_(
+                        AShareUniverse.name.like(f"%{keyword}%"),
+                        AShareUniverse.industry.like(f"%{keyword}%"),
+                    )
+                )
+
+        return and_(*conditions) if conditions else True
+
+    def count_search(
+        self,
+        query_text: str,
+        *,
+        active_only: bool = True,
+    ) -> int:
+        where_clause = self._search_where_clause(query_text, active_only=active_only)
+        with self.db.get_session() as session:
+            return int(
+                session.execute(
+                    select(func.count(AShareUniverse.id)).where(where_clause)
+                ).scalar()
+                or 0
+            )
+
     def search(
         self,
         query_text: str,
         *,
         limit: int = 20,
+        offset: int = 0,
         active_only: bool = True,
     ) -> List[AShareUniverse]:
-        keyword = str(query_text or "").strip()
-        if not keyword:
-            return []
-
         safe_limit = max(1, min(int(limit), 100))
-        conditions = []
-        if active_only:
-            conditions.append(AShareUniverse.active.is_(True))
-
-        if keyword.isdigit():
-            conditions.append(AShareUniverse.code.like(f"{keyword}%"))
-        else:
-            conditions.append(
-                or_(
-                    AShareUniverse.name.like(f"%{keyword}%"),
-                    AShareUniverse.industry.like(f"%{keyword}%"),
-                )
-            )
-
-        where_clause = and_(*conditions) if conditions else True
+        safe_offset = max(0, int(offset))
+        where_clause = self._search_where_clause(query_text, active_only=active_only)
         with self.db.get_session() as session:
             rows = session.execute(
                 select(AShareUniverse)
                 .where(where_clause)
                 .order_by(AShareUniverse.code)
+                .offset(safe_offset)
                 .limit(safe_limit)
             ).scalars().all()
             return list(rows)
+
+    @staticmethod
+    def _normalize_search_keyword(query_text: str) -> str:
+        keyword = str(query_text or "").strip()
+        if not keyword:
+            return ""
+        upper = keyword.upper()
+        if "." in upper:
+            upper = upper.split(".", 1)[0]
+        if upper.startswith(("SH", "SZ", "BJ")) and len(upper) > 2:
+            upper = upper[2:]
+        if upper.isdigit():
+            return upper.zfill(6)[:6]
+        return keyword
 
     def purge_snapshots_before(self, cutoff_date: date) -> int:
         with self.db.get_session() as session:
