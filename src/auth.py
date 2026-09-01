@@ -659,6 +659,19 @@ def record_audit(
         logger.warning("Failed to write audit log action=%s: %s", action, e)
 
 
+def resolve_service_user_id(user_id: Optional[int] = None) -> int:
+    """
+    Resolve ownership user_id for service-layer calls.
+
+    API routes should pass the scoped session user explicitly. When omitted (CLI,
+    auth-disabled single-tenant mode, or legacy tests), fall back to the local
+    admin ownership user.
+    """
+    if user_id is not None:
+        return int(user_id)
+    return get_default_admin_user_id(create_if_missing=True)
+
+
 def get_default_admin_user_id(*, create_if_missing: bool = False) -> int:
     """
     Return the local admin user's id (migrate from legacy file if needed).

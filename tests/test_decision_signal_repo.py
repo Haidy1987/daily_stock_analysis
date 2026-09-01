@@ -34,7 +34,10 @@ def isolated_db(tmp_path):
 
 
 def _fields(**overrides):
+    from tests.auth_test_support import ensure_default_user_id
+
     fields = {
+        "user_id": ensure_default_user_id(),
         "stock_code": "600519",
         "stock_name": "贵州茅台",
         "market": "cn",

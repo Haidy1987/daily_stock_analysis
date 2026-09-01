@@ -7,7 +7,8 @@ import json
 import unittest
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
-from unittest.mock import patch
+from tests.auth_test_support import make_http_request
+from unittest.mock import ANY, patch
 
 from fastapi import HTTPException
 
@@ -192,10 +193,17 @@ class _FakeHistoryDb:
     def __init__(self, record: SimpleNamespace | None):
         self.record = record
 
-    def get_analysis_history_by_id(self, record_id: int):
+    def get_analysis_history_by_id(self, record_id: int, user_id=None):
         return self.record if self.record is not None and record_id == self.record.id else None
 
-    def get_latest_analysis_by_query_id(self, query_id: str, *, code: str | None = None, report_type: str | None = None):
+    def get_latest_analysis_by_query_id(
+        self,
+        query_id: str,
+        *,
+        code: str | None = None,
+        report_type: str | None = None,
+        user_id=None,
+    ):
         if self.record is None or query_id != self.record.query_id:
             return None
         if code is not None and self.record.code != code:
@@ -215,8 +223,15 @@ class _FakeMarketReviewDb:
         self.saved_context_snapshot = kwargs.get("context_snapshot")
         return self.save_result
 
-    def get_latest_analysis_by_query_id(self, query_id: str, *, code: str | None = None, report_type: str | None = None):
-        _ = (query_id, code, report_type)
+    def get_latest_analysis_by_query_id(
+        self,
+        query_id: str,
+        *,
+        code: str | None = None,
+        report_type: str | None = None,
+        user_id=None,
+    ):
+        _ = (query_id, code, report_type, user_id)
         return SimpleNamespace(id=42)
 
     def update_analysis_history_diagnostics(self, *, query_id: str, code: str, diagnostics: dict) -> None:
@@ -1206,16 +1221,16 @@ class RunFlowTestCase(unittest.TestCase):
 
     def test_flow_endpoints_return_404_for_missing_records(self) -> None:
         with self.assertRaises(HTTPException) as history_ctx:
-            get_history_run_flow("404", db_manager=_FakeHistoryDb(None))
+            get_history_run_flow(make_http_request(), "404", db_manager=_FakeHistoryDb(None))
         self.assertEqual(history_ctx.exception.status_code, 404)
 
-        queue = SimpleNamespace(get_task=lambda task_id: None)
+        queue = SimpleNamespace(get_task=lambda task_id, user_id=None: None)
         with patch("api.v1.endpoints.analysis.get_task_queue", return_value=queue), patch(
             "api.v1.endpoints.analysis._load_history_run_flow_by_query_id",
             return_value=None,
         ):
             with self.assertRaises(HTTPException) as task_ctx:
-                get_task_run_flow("missing-task")
+                get_task_run_flow(make_http_request(), "missing-task")
         self.assertEqual(task_ctx.exception.status_code, 404)
 
     def test_completed_task_flow_refresh_uses_persisted_history_report_type_alias(self) -> None:
@@ -1227,19 +1242,20 @@ class RunFlowTestCase(unittest.TestCase):
             status=TaskStatus.COMPLETED,
             report_type="detailed",
         )
-        queue = SimpleNamespace(get_task=lambda task_id: task)
+        queue = SimpleNamespace(get_task=lambda task_id, user_id=None: task)
 
         with patch("api.v1.endpoints.analysis.get_task_queue", return_value=queue), patch(
             "api.v1.endpoints.analysis._load_history_run_flow_by_query_id",
             return_value=None,
         ) as load_history:
-            snapshot = get_task_run_flow("query-flow")
+            snapshot = get_task_run_flow(make_http_request(), "query-flow")
 
         self.assertEqual(snapshot.task_id, "query-flow")
         load_history.assert_called_once_with(
             "query-flow",
             code="600519",
             report_type="full",
+            user_id=ANY,
             fail_open=True,
         )
 
@@ -1252,19 +1268,20 @@ class RunFlowTestCase(unittest.TestCase):
             status=TaskStatus.COMPLETED,
             report_type="market-review",
         )
-        queue = SimpleNamespace(get_task=lambda task_id: task)
+        queue = SimpleNamespace(get_task=lambda task_id, user_id=None: task)
 
         with patch("api.v1.endpoints.analysis.get_task_queue", return_value=queue), patch(
             "api.v1.endpoints.analysis._load_history_run_flow_by_query_id",
             return_value=None,
         ) as load_history:
-            snapshot = get_task_run_flow("market-query-flow")
+            snapshot = get_task_run_flow(make_http_request(), "market-query-flow")
 
         self.assertEqual(snapshot.task_id, "market-query-flow")
         load_history.assert_called_once_with(
             "market-query-flow",
             code="MARKET",
             report_type="market_review",
+            user_id=ANY,
             fail_open=True,
         )
 

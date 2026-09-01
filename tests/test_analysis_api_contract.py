@@ -18,6 +18,8 @@ _MODULE_ENV_FILE = Path(_MODULE_TEMP_DIR.name) / ".env"
 _MODULE_ENV_FILE.write_text("STOCK_LIST=600519,000001\n", encoding="utf-8")
 os.environ["ENV_FILE"] = str(_MODULE_ENV_FILE)
 
+from tests.auth_test_support import make_http_request
+
 from tests.litellm_stub import ensure_litellm_stub
 
 ensure_litellm_stub()
@@ -157,7 +159,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
         ), patch("api.v1.endpoints.analysis.get_task_queue", return_value=task_queue):
             response = trigger_market_review(
                 request=request,
-                config=config,
+                http_request=make_http_request(), config=config,
             )
 
         self.assertEqual(response.status, "accepted")
@@ -207,7 +209,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
             "_release_market_review_lock",
             return_value=None,
         ):
-            trigger_market_review(request=request, config=config)
+            trigger_market_review(request=request, http_request=make_http_request(), config=config)
             self.assertIn("background_task", task_payload)
             task_payload["background_task"]()
 
@@ -259,7 +261,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
             "_release_market_review_lock",
             return_value=None,
         ):
-            response = trigger_market_review(request=request, config=config)
+            response = trigger_market_review(request=request, http_request=make_http_request(), config=config)
             self.assertEqual(response.status, "accepted")
             self.assertIn("background_task", task_payload)
             task_payload["background_task"]()
@@ -285,7 +287,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
             with self.assertRaises(Exception) as ctx:
                 trigger_market_review(
                     request=request,
-                    config=config,
+                    http_request=make_http_request(), config=config,
                 )
 
         self.assertEqual(getattr(ctx.exception, "status_code", None), 409)
@@ -314,6 +316,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
                     with self.assertRaises(Exception) as ctx:
                         trigger_market_review(
                             request=SimpleNamespace(send_notification=True),
+                            http_request=make_http_request(),
                             config=config,
                         )
             finally:
@@ -345,7 +348,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
         ) as acquire, patch("api.v1.endpoints.analysis.get_task_queue", return_value=task_queue):
             response = trigger_market_review(
                 request=request,
-                config=config,
+                http_request=make_http_request(), config=config,
             )
 
         self.assertEqual(response.status, "accepted")
@@ -515,7 +518,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
         )
 
         with patch("api.v1.endpoints.analysis.get_task_queue", return_value=queue):
-            status = get_analysis_status("market-task-1")
+            status = get_analysis_status(make_http_request(), "market-task-1")
 
         self.assertEqual(status.status, "completed")
         self.assertEqual(status.market_review_report, "市场复盘报告示例文本")
@@ -548,7 +551,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
                 )
 
                 with patch("api.v1.endpoints.analysis.get_task_queue", return_value=queue):
-                    status = get_analysis_status(f"task-{task_status.value}")
+                    status = get_analysis_status(make_http_request(), f"task-{task_status.value}")
 
                 self.assertEqual(status.status, task_status.value)
                 self.assertEqual(status.progress, 42)
@@ -583,7 +586,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
         )
 
         with patch("api.v1.endpoints.analysis.get_task_queue", return_value=queue):
-            status = get_analysis_status("task-queue-1")
+            status = get_analysis_status(make_http_request(), "task-queue-1")
 
         self.assertEqual(status.status, "completed")
         self.assertIsNotNone(status.result)
@@ -644,7 +647,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
         )
 
         with patch("api.v1.endpoints.analysis.get_task_queue", return_value=queue):
-            status = get_analysis_status("task-queue-action-conflict")
+            status = get_analysis_status(make_http_request(), "task-queue-action-conflict")
 
         self.assertEqual(status.status, "completed")
         self.assertIsNotNone(status.result)
@@ -695,7 +698,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
         )
 
         with patch("api.v1.endpoints.analysis.get_task_queue", return_value=queue):
-            status = get_analysis_status("task-queue-zero-score")
+            status = get_analysis_status(make_http_request(), "task-queue-zero-score")
 
         self.assertEqual(status.status, "completed")
         self.assertIsNotNone(status.result)
@@ -751,7 +754,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
                  "api.v1.endpoints.analysis._load_sync_fundamental_sources",
                  return_value=({}, None),
              ):
-            status = get_analysis_status("task-queue-zero-score-enriched")
+            status = get_analysis_status(make_http_request(), "task-queue-zero-score-enriched")
 
         self.assertEqual(status.status, "completed")
         self.assertIsNotNone(status.result)
@@ -792,7 +795,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
                  "api.v1.endpoints.analysis._load_sync_fundamental_sources",
                  return_value=({}, None),
              ):
-            status = get_analysis_status("task-queue-2")
+            status = get_analysis_status(make_http_request(), "task-queue-2")
 
         self.assertEqual(status.status, "completed")
         self.assertIsNotNone(status.result)
@@ -922,7 +925,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
 
         with patch("api.v1.endpoints.analysis.get_task_queue", return_value=mock_queue), \
              patch("src.storage.DatabaseManager.get_instance", return_value=mock_db):
-            result = get_analysis_status("task-1")
+            result = get_analysis_status(make_http_request(), "task-1")
 
         self.assertEqual(result.status, "completed")
         self.assertEqual(result.result.report["meta"]["current_price"], 1234.5)
@@ -949,7 +952,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
 
         with patch("api.v1.endpoints.analysis.get_task_queue", return_value=mock_queue), \
              patch("src.storage.DatabaseManager.get_instance", return_value=mock_db):
-            result = get_analysis_status("market-task-1")
+            result = get_analysis_status(make_http_request(), "market-task-1")
 
         self.assertEqual(result.status, "completed")
         self.assertEqual(result.market_review_report, "# 🎯 大盘复盘\n\n复盘正文")
@@ -993,7 +996,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
 
         with patch("api.v1.endpoints.analysis.get_task_queue", return_value=mock_queue), \
              patch("src.storage.DatabaseManager.get_instance", return_value=mock_db):
-            result = get_analysis_status("task-2")
+            result = get_analysis_status(make_http_request(), "task-2")
 
         self.assertEqual(result.status, "completed")
         self.assertEqual(result.result.report["meta"]["current_price"], 180.35)
@@ -1037,7 +1040,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
 
         with patch("api.v1.endpoints.analysis.get_task_queue", return_value=mock_queue), \
              patch("src.storage.DatabaseManager.get_instance", return_value=mock_db):
-            result = get_analysis_status("task-3")
+            result = get_analysis_status(make_http_request(), "task-3")
 
         self.assertEqual(result.status, "completed")
         self.assertEqual(result.result.report["meta"]["current_price"], 412.6)
@@ -1139,6 +1142,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
                         notify=True,
                         analysis_phase="auto",
                     ),
+                    make_http_request(),
                 )
 
         self.assertEqual(ctx.exception.status_code, 500)
@@ -1190,6 +1194,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
                     skills=None,
                     analysis_phase="intraday",
                 ),
+                make_http_request(),
             )
 
         self.assertEqual(
@@ -1934,6 +1939,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
             query_id="q_sync_001",
             code="600519",
             limit=1,
+            user_id=ANY,
         )
         mock_db.get_latest_fundamental_snapshot.assert_called_once_with(
             query_id="q_sync_001",
@@ -1982,7 +1988,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
         with patch("api.v1.endpoints.analysis.get_task_queue") as queue_mock, \
              patch("src.storage.DatabaseManager.get_instance", return_value=mock_db):
             queue_mock.return_value.get_task.return_value = None
-            status = get_analysis_status("task_123")
+            status = get_analysis_status(make_http_request(), "task_123")
 
         self.assertEqual(status.status, "completed")
         self.assertEqual(status.result.report["meta"]["current_price"], 1234.5)
@@ -2041,7 +2047,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
         with patch("api.v1.endpoints.analysis.get_task_queue") as queue_mock, \
              patch("src.storage.DatabaseManager.get_instance", return_value=mock_db):
             queue_mock.return_value.get_task.return_value = None
-            status = get_analysis_status("task_agent_snapshot_1")
+            status = get_analysis_status(make_http_request(), "task_agent_snapshot_1")
 
         self.assertEqual(status.status, "completed")
         self.assertEqual(status.result.report["meta"]["current_price"], 1888.0)
@@ -2138,7 +2144,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
         with patch("api.v1.endpoints.analysis.get_task_queue") as queue_mock, \
              patch("src.storage.DatabaseManager.get_instance", return_value=mock_db):
             queue_mock.return_value.get_task.return_value = task
-            status = get_analysis_status("task_agent_snapshot_in_memory_1")
+            status = get_analysis_status(make_http_request(), "task_agent_snapshot_in_memory_1")
 
         self.assertEqual(status.status, "completed")
         self.assertEqual(status.result.report["meta"]["current_price"], 1888.0)
@@ -2175,6 +2181,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
             query_id="task_agent_snapshot_in_memory_1",
             code="600519",
             limit=1,
+            user_id=ANY,
         )
 
     def test_get_analysis_status_in_memory_task_without_db_snapshot_preserves_service_phase_summary(self) -> None:
@@ -2216,7 +2223,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
                  return_value=(None, None),
              ) as load_sources:
             queue_mock.return_value.get_task.return_value = task
-            status = get_analysis_status("task_no_snapshot_in_memory_1")
+            status = get_analysis_status(make_http_request(), "task_no_snapshot_in_memory_1")
 
         self.assertEqual(status.status, "completed")
         self.assertEqual(status.analysis_phase, "intraday")
@@ -2228,6 +2235,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
         load_sources.assert_called_once_with(
             query_id="task_no_snapshot_in_memory_1",
             stock_code="600519",
+            user_id=ANY,
         )
 
     def test_openapi_declares_single_and_batch_async_202_payloads(self) -> None:
@@ -2302,7 +2310,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
         ), patch("api.v1.endpoints.analysis.get_task_queue", return_value=task_queue):
             response = trigger_market_review(
                 request=None,
-                config=config,
+                http_request=make_http_request(), config=config,
             )
 
         self.assertTrue(response.send_notification)
@@ -2323,6 +2331,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
                     async_mode=False,
                     analysis_phase="auto",
                 ),
+                http_request=make_http_request(),
                 config=SimpleNamespace(),
             )
 
@@ -2347,6 +2356,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
                         async_mode=True,
                         analysis_phase="auto",
                     ),
+                    http_request=make_http_request(),
                     config=SimpleNamespace(),
                 )
 
@@ -2370,6 +2380,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
                         async_mode=True,
                         analysis_phase="auto",
                     ),
+                    http_request=make_http_request(),
                     config=SimpleNamespace(),
                 )
 
@@ -2399,6 +2410,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
                     notify=True,
                     analysis_phase="auto",
                 ),
+                http_request=make_http_request(),
                 config=SimpleNamespace(),
             )
 
@@ -2406,6 +2418,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
         resolve_mock.assert_not_called()
         queue.submit_tasks_batch.assert_called_once_with(
             stock_codes=["AAPL.US"],
+            user_id=ANY,
             stock_name=None,
             original_query="AAPL.US",
             selection_source="manual",
@@ -2438,6 +2451,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
                     notify=True,
                     analysis_phase="auto",
                 ),
+                http_request=make_http_request(),
                 config=SimpleNamespace(),
             )
 
@@ -2445,6 +2459,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
         resolve_mock.assert_not_called()
         queue.submit_tasks_batch.assert_called_once_with(
             stock_codes=["005930.KS"],
+            user_id=ANY,
             stock_name=None,
             original_query="005930",
             selection_source="manual",
@@ -2477,6 +2492,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
                     notify=True,
                     analysis_phase="auto",
                 ),
+                http_request=make_http_request(),
                 config=SimpleNamespace(),
             )
 
@@ -2485,6 +2501,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
         resolve_mock.assert_not_called()
         queue.submit_tasks_batch.assert_called_once_with(
             stock_codes=["7203.T"],
+            user_id=ANY,
             stock_name=None,
             original_query="7203",
             selection_source="manual",
@@ -2514,11 +2531,16 @@ class AnalysisApiContractTestCase(unittest.TestCase):
         })
 
         with patch("api.v1.endpoints.analysis.get_task_queue", return_value=queue):
-            response = trigger_analysis(request=request, config=SimpleNamespace())
+            response = trigger_analysis(
+                request=request,
+                http_request=make_http_request(),
+                config=SimpleNamespace(),
+            )
 
         self.assertEqual(response.status_code, 202)
         queue.submit_tasks_batch.assert_called_once_with(
             stock_codes=["600519"],
+            user_id=ANY,
             stock_name=None,
             original_query=None,
             selection_source=None,
@@ -2556,6 +2578,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
                     notify=True,
                     analysis_phase="intraday",
                 ),
+                http_request=make_http_request(),
                 config=SimpleNamespace(),
             )
 
@@ -2563,6 +2586,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
         self.assertEqual(json.loads(response.body)["analysis_phase"], "intraday")
         queue.submit_tasks_batch.assert_called_once_with(
             stock_codes=["600519"],
+            user_id=ANY,
             stock_name=None,
             original_query=None,
             selection_source=None,
@@ -2593,6 +2617,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
                     async_mode=True,
                     analysis_phase="auto",
                 ),
+                http_request=make_http_request(),
                 config=SimpleNamespace(),
             )
 
@@ -2600,6 +2625,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
         resolve_mock.assert_not_called()
         queue.submit_tasks_batch.assert_called_once_with(
             stock_codes=["00700.HK"],
+            user_id=ANY,
             stock_name="腾讯控股",
             original_query="00700",
             selection_source="autocomplete",
@@ -2631,6 +2657,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
                     notify=True,
                     analysis_phase="auto",
                 ),
+                http_request=make_http_request(),
                 config=SimpleNamespace(),
             )
 
@@ -2638,6 +2665,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
         resolve_mock.assert_not_called()
         queue.submit_tasks_batch.assert_called_once_with(
             stock_codes=["920493.BJ"],
+            user_id=ANY,
             stock_name="示例北交所股票",
             original_query="920493",
             selection_source="autocomplete",
@@ -2671,6 +2699,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
                                 notify=True,
                                 analysis_phase="auto",
                             ),
+                            http_request=make_http_request(),
                             config=SimpleNamespace(),
                         )
 
@@ -2700,6 +2729,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
                     async_mode=True,
                     analysis_phase="auto",
                 ),
+                http_request=make_http_request(),
                 config=SimpleNamespace(),
             )
 
@@ -2707,6 +2737,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
         resolve_mock.assert_not_called()
         queue.submit_tasks_batch.assert_called_once_with(
             stock_codes=["HK00700"],
+            user_id=ANY,
             stock_name=None,
             original_query="HK00700",
             selection_source="manual",
@@ -2738,12 +2769,14 @@ class AnalysisApiContractTestCase(unittest.TestCase):
                     notify=True,
                     analysis_phase="auto",
                 ),
+                http_request=make_http_request(),
                 config=SimpleNamespace(),
             )
 
         self.assertEqual(response.status_code, 202)
         queue.submit_tasks_batch.assert_called_once_with(
             stock_codes=["688783"],
+            user_id=ANY,
             stock_name=None,
             original_query="西安奕材-U",
             selection_source="manual",
@@ -2775,12 +2808,14 @@ class AnalysisApiContractTestCase(unittest.TestCase):
                     notify=True,
                     analysis_phase="auto",
                 ),
+                http_request=make_http_request(),
                 config=SimpleNamespace(),
             )
 
         self.assertEqual(response.status_code, 202)
         queue.submit_tasks_batch.assert_called_once_with(
             stock_codes=["600519"],
+            user_id=ANY,
             stock_name=None,
             original_query="贵州茅台",
             selection_source="manual",
@@ -2811,12 +2846,14 @@ class AnalysisApiContractTestCase(unittest.TestCase):
                     notify=True,
                     analysis_phase="auto",
                 ),
+                http_request=make_http_request(),
                 config=SimpleNamespace(),
             )
 
         self.assertEqual(response.status_code, 202)
         queue.submit_tasks_batch.assert_called_once_with(
             stock_codes=["600519", "000001"],
+            user_id=ANY,
             stock_name=None,
             original_query="uploaded.csv",
             selection_source="import",
@@ -2850,6 +2887,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
                         notify=True,
                         analysis_phase="auto",
                     ),
+                    http_request=make_http_request(),
                     config=SimpleNamespace(),
                 )
                 second = trigger_analysis(
@@ -2865,6 +2903,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
                         notify=True,
                         analysis_phase="auto",
                     ),
+                    http_request=make_http_request(),
                     config=SimpleNamespace(),
                 )
 
@@ -2905,12 +2944,14 @@ class AnalysisApiContractTestCase(unittest.TestCase):
                     notify=True,
                     analysis_phase="auto",
                 ),
+                http_request=make_http_request(),
                 config=SimpleNamespace(),
             )
 
         self.assertEqual(response.status_code, 202)
         queue.submit_tasks_batch.assert_called_once_with(
             stock_codes=["600519", "000001"],
+            user_id=ANY,
             stock_name=None,
             original_query="茅台,平安银行",
             selection_source="import",
@@ -2993,7 +3034,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
         async def run():
             with patch("api.v1.endpoints.analysis.get_task_queue", return_value=mock_task_queue), \
                  patch("asyncio.Queue", return_value=never_queue):
-                response = await task_stream()
+                response = await task_stream(make_http_request())
                 gen = response.body_iterator
 
                 async def consume():
@@ -3043,7 +3084,7 @@ class AnalysisApiContractTestCase(unittest.TestCase):
         }
 
         with patch("api.v1.endpoints.analysis.get_task_queue", return_value=queue):
-            response = get_task_list(status=None, limit=20)
+            response = get_task_list(make_http_request(), status=None, limit=20)
 
         self.assertEqual(response.tasks[0].analysis_phase, "postmarket")
         self.assertEqual(response.tasks[0].skills, ["growth_quality"])
@@ -3159,15 +3200,18 @@ class BatchTaskQueueContractTestCase(unittest.TestCase):
         )
 
     def test_batch_submit_deduplicates_equivalent_stock_code_shapes(self) -> None:
+        from src.auth import resolve_service_user_id
+
         queue = AnalysisTaskQueue(max_workers=1)
         queue._executor = type("ExecutorStub", (), {"submit": lambda self, *args, **kwargs: Future()})()
+        user_id = resolve_service_user_id()
 
         accepted, duplicates = queue.submit_tasks_batch(["600519"], report_type="detailed")
 
         self.assertEqual(len(accepted), 1)
         self.assertEqual(duplicates, [])
-        self.assertTrue(queue.is_analyzing("600519.SH"))
-        self.assertEqual(queue.get_analyzing_task_id("600519.SH"), accepted[0].task_id)
+        self.assertTrue(queue.is_analyzing("600519.SH", user_id))
+        self.assertEqual(queue.get_analyzing_task_id("600519.SH", user_id), accepted[0].task_id)
 
         accepted_again, duplicates_again = queue.submit_tasks_batch(
             ["600519.SH"],

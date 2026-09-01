@@ -88,7 +88,8 @@ class MultiUserMigrationTestCase(unittest.TestCase):
         admin_id = auth.get_default_admin_user_id(create_if_missing=False)
         self.assertIsNotNone(admin_id)
 
-        # Re-run ensure path (idempotent).
+        # Re-run ensure path (idempotent). First get_instance may have skipped
+        # seeding because admin did not exist yet.
         db._ensure_user_owned_user_id_columns()
         db._ensure_user_owned_user_id_columns()
 
@@ -102,6 +103,14 @@ class MultiUserMigrationTestCase(unittest.TestCase):
 
         from src.repositories.watchlist_repo import WatchlistRepository
 
+        # Avoid process-level STOCK_LIST pollution from earlier tests; prefer ENV_FILE.
+        os.environ.pop("STOCK_LIST", None)
+        Config.reset_instance()
+        self.assertEqual(list(Config.get_instance().stock_list or []), ["600519", "000001"])
+
+        # Clear any rows seeded under polluted config, then re-run the real seed path.
+        WatchlistRepository(db).replace_codes(admin_id, [])
+        db._ensure_admin_watchlist_seeded(admin_id)
         codes = WatchlistRepository(db).list_codes(admin_id)
         self.assertEqual(codes, ["600519", "000001"])
 

@@ -32,6 +32,7 @@ import src.auth as auth
 from src.config import Config
 from src.core.config_manager import ConfigManager
 from src.services.system_config_service import SystemConfigService
+from tests.auth_test_support import make_admin_user
 
 
 class SystemConfigApiTestCase(unittest.TestCase):
@@ -67,12 +68,15 @@ class SystemConfigApiTestCase(unittest.TestCase):
 
         self.manager = ConfigManager(env_path=self.env_path)
         self.service = SystemConfigService(manager=self.manager)
-        self._verify_session_patch = patch.object(system_config, "verify_session", return_value=True)
-        self._verify_session_patch.start()
+        self._resolve_session_patch = patch(
+            "api.v1.endpoints.system_config.resolve_session",
+            side_effect=lambda cookie: make_admin_user() if cookie else None,
+        )
+        self._resolve_session_patch.start()
 
     def tearDown(self) -> None:
         Config.reset_instance()
-        self._verify_session_patch.stop()
+        self._resolve_session_patch.stop()
         os.environ.pop("ENV_FILE", None)
         if self._orig_dsa_desktop_mode is None:
             os.environ.pop("DSA_DESKTOP_MODE", None)
@@ -628,7 +632,7 @@ class SystemConfigApiTestCase(unittest.TestCase):
     def test_config_env_endpoints_require_valid_admin_session(self) -> None:
         with (
             patch.dict(os.environ, {"DSA_DESKTOP_MODE": "false"}, clear=False),
-            patch.object(system_config, "verify_session", return_value=False),
+            patch("api.v1.endpoints.system_config.resolve_session", return_value=None),
         ):
             current = system_config.get_system_config(include_schema=False, service=self.service).model_dump()
             invalid_request = self._build_request({system_config.COOKIE_NAME: "invalid-session"})

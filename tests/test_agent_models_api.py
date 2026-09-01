@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from api.v1.endpoints import agent
+from tests.auth_test_support import make_http_request
 from src.config import Config
 from src.llm.backend_registry import GENERATION_ONLY_BACKEND_IDS
 from src.services.agent_model_service import list_agent_model_deployments
@@ -365,7 +366,7 @@ class AgentSkillsEndpointTestCase(unittest.TestCase):
             "api.v1.endpoints.agent.asyncio.get_running_loop",
             side_effect=lambda: _ImmediateLoop(real_get_running_loop()),
         ):
-            payload = asyncio.run(agent.agent_chat(request)).model_dump()
+            payload = asyncio.run(agent.agent_chat(request, make_http_request())).model_dump()
 
         mock_build_executor.assert_called_once_with(config, None)
         executor.chat.assert_called_once()

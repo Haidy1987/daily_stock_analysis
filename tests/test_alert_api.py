@@ -26,9 +26,11 @@ import src.auth as auth
 from api.app import create_app
 from src.config import Config
 from src.repositories.alert_repo import AlertRepository
+from src.repositories.watchlist_repo import WatchlistRepository
 from src.services.alert_service import AlertService
 from src.services.portfolio_service import PortfolioService
 from src.storage import AlertCooldownRecord, AlertNotificationRecord, AlertTriggerRecord, Base, DatabaseManager
+from tests.auth_test_support import ensure_default_user_id
 
 
 def _reset_auth_globals() -> None:
@@ -69,6 +71,7 @@ class AlertApiTestCase(unittest.TestCase):
         app = create_app(static_dir=self.data_dir / "empty-static")
         self.client = TestClient(app)
         self.db = DatabaseManager.get_instance()
+        WatchlistRepository().add_code(ensure_default_user_id(), "600519")
 
     def tearDown(self) -> None:
         DatabaseManager.reset_instance()

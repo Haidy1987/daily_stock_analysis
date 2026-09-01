@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any, Dict, Iterable, List, Optional
 
+from src.auth import resolve_service_user_id
 from src.repositories.watchlist_repo import WatchlistRepository
 from src.services.portfolio_risk_service import PortfolioRiskService
 from src.services.portfolio_service import PortfolioService
@@ -133,7 +134,7 @@ def ensure_active_portfolio_account(
 
 def expand_symbol_targets(
     *,
-    user_id: int,
+    user_id: Optional[int] = None,
     target_scope: str,
     target: str,
     config: Any,
@@ -144,6 +145,7 @@ def expand_symbol_targets(
     Returns ``(targets, overflow_count)``. The returned targets are already capped
     by ``EXPANDED_TARGET_SOFT_CAP``.
     """
+    user_id = resolve_service_user_id(user_id)
 
     if target_scope == "watchlist":
         symbols = _watchlist_symbols(user_id)

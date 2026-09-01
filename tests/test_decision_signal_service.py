@@ -1187,6 +1187,7 @@ def test_service_propagates_unexpected_invalidation_failures(isolated_db) -> Non
                 action=fields["action"],
                 market=fields["market"],
                 stock_code=fields["stock_code"],
+                user_id=fields.get("user_id") or 1,
             )
             return DecisionSignalCreateResult(
                 row=row,

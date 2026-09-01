@@ -23,7 +23,9 @@ except ModuleNotFoundError:
 import src.auth as auth
 from api.app import create_app
 from src.config import Config
+from src.repositories.watchlist_repo import WatchlistRepository
 from src.storage import AnalysisHistory, DatabaseManager, DecisionSignalRecord, PortfolioAccount, PortfolioPosition, utc_naive_now
+from tests.auth_test_support import ensure_default_user_id
 
 
 @contextmanager
@@ -710,11 +712,13 @@ def test_holding_only_uses_cached_positions_and_stock_code_variants(client_and_d
     assert hk_same_symbol_resp.status_code == 200, hk_same_symbol_resp.text
 
     with db.session_scope() as session:
+        owner_user_id = ensure_default_user_id()
         account = PortfolioAccount(
             name="Test account",
             market="cn",
             base_currency="CNY",
             is_active=True,
+            user_id=owner_user_id,
         )
         session.add(account)
         session.flush()
@@ -768,6 +772,7 @@ def test_holding_only_uses_cached_positions_and_stock_code_variants(client_and_d
             market="us",
             base_currency="USD",
             is_active=False,
+            user_id=owner_user_id,
         )
         session.add(inactive_account)
         session.flush()
@@ -836,7 +841,12 @@ def test_holding_only_uses_cached_positions_and_stock_code_variants(client_and_d
     assert variant_resp.json()["total"] == 1
 
     with db.session_scope() as session:
-        empty_account = PortfolioAccount(name="Empty account", market="cn", base_currency="CNY")
+        empty_account = PortfolioAccount(
+            name="Empty account",
+            market="cn",
+            base_currency="CNY",
+            user_id=ensure_default_user_id(),
+        )
         session.add(empty_account)
         session.flush()
         empty_account_id = empty_account.id

@@ -82,6 +82,8 @@ WEB_SETTINGS_HIDDEN_FROM_UI = {
     "USE_PROXY",
     "PROXY_HOST",
     "PROXY_PORT",
+    # Ops/scheduler knobs — configured via runtime.env / Actions, not Web settings cards.
+    "A_SHARE_UNIVERSE_SYNC_ENABLED",
 }
 
 _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {

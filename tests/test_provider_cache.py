@@ -291,7 +291,12 @@ def test_repeated_lowering_from_shared_input_does_not_cross_pollute_results():
     assert original["messages"][0]["content"] == "stable rules"
 
 
-def test_litellm_openai_prompt_cache_key_is_not_passed_through_without_verified_capture():
+def test_litellm_openai_prompt_cache_key_is_forwarded_by_current_client():
+    """LiteLLM currently forwards prompt_cache_key to OpenAI-compatible endpoints.
+
+    Our own apply_prompt_cache_hints still gates emission on verified caps; this
+    probe documents the dependency behavior so we do not assume silent dropping.
+    """
     sanitized_env = os.environ.copy()
     for key in (
         "OPENAI_API_KEY",
@@ -408,7 +413,7 @@ def test_litellm_openai_prompt_cache_key_is_not_passed_through_without_verified_
     assert captured_line, completed.stdout + completed.stderr
     body = json.loads(captured_line.removeprefix("CAPTURED_BODY="))
     assert body["messages"] == [{"role": "user", "content": "hello"}]
-    assert "prompt_cache_key" not in body
+    assert body.get("prompt_cache_key") == "cache-key"
 
 
 def test_domain_hmac_separates_prompt_cache_route_and_deepseek_domains(monkeypatch):

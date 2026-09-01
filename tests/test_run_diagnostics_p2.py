@@ -12,8 +12,7 @@ from types import SimpleNamespace
 
 from fastapi import HTTPException
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
+from tests.auth_test_support import make_http_request
 from api.v1.endpoints.history import get_history_diagnostics
 from src.services.history_service import HistoryService
 from src.services.run_diagnostics import build_run_diagnostic_summary, sanitize_diagnostic_text
@@ -146,18 +145,30 @@ class _FakeHistoryDb:
     def __init__(self, record: SimpleNamespace | None):
         self.record = record
 
-    def get_analysis_history_by_id(self, record_id: int):
+    def get_analysis_history_by_id(self, record_id: int, user_id=None):
         return self.record if record_id == 1 else None
 
-    def get_latest_analysis_by_query_id(self, query_id: str):
+    def get_latest_analysis_by_query_id(
+        self,
+        query_id: str,
+        code=None,
+        report_type=None,
+        user_id=None,
+    ):
         return self.record if query_id == "query-p2" else None
 
 
 class _FailingHistoryDb:
-    def get_analysis_history_by_id(self, record_id: int):
+    def get_analysis_history_by_id(self, record_id: int, user_id=None):
         raise RuntimeError("database unavailable")
 
-    def get_latest_analysis_by_query_id(self, query_id: str):
+    def get_latest_analysis_by_query_id(
+        self,
+        query_id: str,
+        code=None,
+        report_type=None,
+        user_id=None,
+    ):
         raise RuntimeError("database unavailable")
 
 
@@ -502,7 +513,7 @@ class RunDiagnosticsP2TestCase(unittest.TestCase):
         db = _FakeHistoryDb(_history_record(context_snapshot=context_snapshot))
 
         service_summary = HistoryService(db).resolve_and_get_diagnostics("1")
-        endpoint_summary = get_history_diagnostics("1", db_manager=db)
+        endpoint_summary = get_history_diagnostics(make_http_request(), "1", db_manager=db)
 
         self.assertIsNotNone(service_summary)
         self.assertEqual(service_summary["trace_id"], "trace-p2")
@@ -520,7 +531,7 @@ class RunDiagnosticsP2TestCase(unittest.TestCase):
 
     def test_history_diagnostics_endpoint_surfaces_lookup_errors(self) -> None:
         with self.assertRaises(HTTPException) as ctx:
-            get_history_diagnostics("1", db_manager=_FailingHistoryDb())
+            get_history_diagnostics(make_http_request(), "1", db_manager=_FailingHistoryDb())
 
         self.assertEqual(ctx.exception.status_code, 500)
 
@@ -532,7 +543,7 @@ class RunDiagnosticsP2TestCase(unittest.TestCase):
         with self.assertRaises(ValueError):
             HistoryService(db).resolve_and_get_diagnostics("1")
         with self.assertRaises(HTTPException) as ctx:
-            get_history_diagnostics("1", db_manager=db)
+            get_history_diagnostics(make_http_request(), "1", db_manager=db)
 
         self.assertEqual(ctx.exception.status_code, 500)
 
