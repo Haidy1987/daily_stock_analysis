@@ -158,6 +158,23 @@ def _load_stock_index_file(index_path: Path) -> Dict[str, str]:
     return _build_stock_name_map(_load_stock_index_payload(index_path))
 
 
+def _load_stock_name_map_from_db() -> Dict[str, str]:
+    try:
+        from src.repositories.a_share_universe_repo import AShareUniverseRepository
+        from src.services.a_share_universe.index_builder import build_compressed_a_share_index
+
+        repo = AShareUniverseRepository()
+        if repo.count_universe(active_only=True) == 0:
+            return {}
+
+        rows = repo.list_universe(active_only=True)
+        compressed = build_compressed_a_share_index(rows)
+        return _build_stock_name_map(compressed)
+    except Exception as exc:  # noqa: BLE001 - DB fallback must not break name lookup
+        logger.debug("[股票名称] 从 A 股 universe 数据库加载索引失败: %s", exc)
+        return {}
+
+
 def _load_remote_stock_index_file(index_path: Path) -> Dict[str, str]:
     raw_items = _load_stock_index_payload(index_path)
     validate_stock_index_payload(raw_items)
@@ -261,6 +278,12 @@ def get_stock_name_index_map() -> Dict[str, str]:
                 return _STOCK_INDEX_CACHE
             except (OSError, TypeError, ValueError) as exc:
                 logger.debug("[股票名称] 读取股票索引失败 %s: %s", index_path, exc)
+
+        db_map = _load_stock_name_map_from_db()
+        if db_map:
+            logger.debug("[股票名称] 已回退到 A 股 universe 数据库索引映射 (%d 条)", len(db_map))
+            _STOCK_INDEX_CACHE = db_map
+            return _STOCK_INDEX_CACHE
 
         _STOCK_INDEX_CACHE = {}
         return _STOCK_INDEX_CACHE

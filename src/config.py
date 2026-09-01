@@ -732,6 +732,13 @@ class Config:
     longbridge_oauth_client_id: Optional[str] = None
     stock_index_remote_update_enabled: bool = True
 
+    # === A-share full-market universe sync (Phase 0 schema; sync in later phases) ===
+    a_share_universe_sync_enabled: bool = False
+    a_share_universe_source: str = "eastmoney"
+    a_share_universe_workers: int = 6
+    a_share_universe_min_interval_sec: float = 1.0
+    a_share_universe_history_retention_days: int = 0
+
     # === AlphaSift optional stock screening integration ===
     alphasift_enabled: bool = False
     alphasift_install_spec: str = DEFAULT_ALPHASIFT_INSTALL_SPEC
@@ -2084,6 +2091,31 @@ class Config:
                 minimum=1,
             ),
             portfolio_fx_update_enabled=os.getenv('PORTFOLIO_FX_UPDATE_ENABLED', 'true').lower() == 'true',
+            a_share_universe_sync_enabled=parse_env_bool(
+                os.getenv('A_SHARE_UNIVERSE_SYNC_ENABLED'),
+                default=False,
+            ),
+            a_share_universe_source=(
+                os.getenv('A_SHARE_UNIVERSE_SOURCE', 'eastmoney').strip().lower() or 'eastmoney'
+            ),
+            a_share_universe_workers=parse_env_int(
+                os.getenv('A_SHARE_UNIVERSE_WORKERS'),
+                6,
+                field_name='A_SHARE_UNIVERSE_WORKERS',
+                minimum=1,
+            ),
+            a_share_universe_min_interval_sec=parse_env_float(
+                os.getenv('A_SHARE_UNIVERSE_MIN_INTERVAL_SEC'),
+                1.0,
+                field_name='A_SHARE_UNIVERSE_MIN_INTERVAL_SEC',
+                minimum=0.0,
+            ),
+            a_share_universe_history_retention_days=parse_env_int(
+                os.getenv('A_SHARE_UNIVERSE_HISTORY_RETENTION_DAYS'),
+                0,
+                field_name='A_SHARE_UNIVERSE_HISTORY_RETENTION_DAYS',
+                minimum=0,
+            ),
             alphasift_enabled=parse_env_bool(os.getenv('ALPHASIFT_ENABLED'), default=False),
             alphasift_install_spec=(
                 DEFAULT_ALPHASIFT_INSTALL_SPEC

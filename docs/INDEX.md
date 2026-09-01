@@ -14,7 +14,7 @@
 | 使用 Bot / IM 接入 | [Bot 命令与接入](bot-command.md) | [Bot 平台配置](bot/) |
 | 排查运行问题 | [FAQ](FAQ.md) | [更新日志](CHANGELOG.md) |
 | 处理数据源失败或降级 | [数据源稳定性与故障处理图示](data-source-stability.md) | [FAQ](FAQ.md) |
-| 参与开发或提交 PR | [贡献指南](CONTRIBUTING.md) | [API 规格](architecture/api_spec.json) |
+| 参与开发或提交 PR | [贡献指南](CONTRIBUTING.md) | [固定开发与交付流程](development-workflow.md)、[API 规格](architecture/api_spec.json) |
 
 ## 快速开始
 
@@ -36,6 +36,7 @@
 | [LiteLLM YAML 示例](examples/litellm_config.example.yaml) | LiteLLM 多渠道配置示例 |
 | [通知能力基线](notifications.md) | 企业微信、飞书、Telegram、Discord、Slack、邮件等通知渠道配置 |
 | [Tushare 股票列表指南](TUSHARE_STOCK_LIST_GUIDE.md) | Tushare 股票列表相关配置和使用说明 |
+| [A 股全量主数据同步](a-share-universe-sync.md) | A 股全量主数据/快照表结构、配置项与分阶段计划 |
 
 ## 使用专题
 
@@ -65,6 +66,7 @@
 | --- | --- |
 | [API 规格](architecture/api_spec.json) | FastAPI OpenAPI 规格产物 |
 | [贡献指南](CONTRIBUTING.md) | Issue、PR、测试、文档同步和协作要求 |
+| [固定开发与交付流程](development-workflow.md) | 从接任务、影响面判断、实现、验证、PR 到发布和回滚的统一 SOP |
 | [项目瘦身规划](plans/project-slimming-plan.md) | 仓库资源、前端依赖、Python 依赖、代码复杂度和 Git 历史的分阶段瘦身方案 |
 | [多用户系统改造规划](plans/multi-user-system-plan.md) | 用户认证、角色权限、数据隔离、数据库迁移、部署和回滚方案 |
 | [多用户数据归属清单](plans/multi-user-data-inventory.md) | 阶段 0 盘点：认证现状、28 表归属、伪 user_id 语义、迁移策略与阶段前置条件 |

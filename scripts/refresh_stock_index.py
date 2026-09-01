@@ -2,10 +2,14 @@
 # -*- coding: utf-8 -*-
 """Refresh local stock autocomplete index assets.
 
-Default flow:
+Default flow (``--source tushare``):
 1. Fetch Tushare stock lists into ``data/`` with ``--a-rk`` for A-share name correction.
 2. Generate ``apps/dsa-web/public/stocks.index.json`` from CSV plus JP/KR seed rows.
 3. Copy the generated index to ``static/stocks.index.json`` for backend use.
+
+DB flow (``--source db``):
+1. Generate A-share entries from ``a_share_universe`` and merge non-A-share rows from the existing index.
+2. Copy the generated index to ``static/stocks.index.json``.
 """
 
 from __future__ import annotations
@@ -61,10 +65,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="跳过 Tushare 抓取，仅用现有 data/stock_list_*.csv 重新生成索引",
     )
+    parser.add_argument(
+        "--source",
+        choices=["tushare", "db"],
+        default="tushare",
+        help="索引数据源：tushare（默认）或 a_share_universe 数据库",
+    )
     args = parser.parse_args(argv)
 
     try:
-        if args.skip_fetch:
+        if args.source == "db":
+            _run([sys.executable, "scripts/generate_index_from_db.py"])
+            _sync_static_index()
+        elif args.skip_fetch:
             print("[refresh_stock_index] skip Tushare fetch; using existing CSV files")
         else:
             if not _has_tushare_token():
