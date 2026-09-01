@@ -20,15 +20,17 @@ from generate_index_from_csv import (
     get_us_delist_priority,
     parse_stock_row,
     determine_market,
-    generate_aliases,
-    normalize_name_for_pinyin,
-    normalize_stock_name_for_index,
-    generate_pinyin,
     main,
-    compress_index,
-    build_stock_index,
     load_tushare_data,
     load_akshare_data,
+)
+from src.services.stock_index_builder import (
+    build_stock_index,
+    compress_index,
+    generate_aliases,
+    generate_pinyin,
+    normalize_name_for_pinyin,
+    normalize_stock_name_for_index,
 )
 
 
@@ -639,18 +641,18 @@ class TestPinyin:
 
     def test_generate_pinyin_requires_dependency(self, monkeypatch):
         """测试缺少 pypinyin 时不会生成降级拼音字段"""
-        import generate_index_from_csv
+        from src.services import stock_index_builder
 
-        monkeypatch.setattr(generate_index_from_csv, 'PYPINYIN_AVAILABLE', False)
+        monkeypatch.setattr(stock_index_builder, 'PYPINYIN_AVAILABLE', False)
 
         with pytest.raises(RuntimeError, match='pypinyin is required'):
-            generate_index_from_csv.generate_pinyin('平安银行')
+            stock_index_builder.generate_pinyin('平安银行')
 
     def test_main_fails_without_pypinyin(self, monkeypatch):
         """测试正式生成索引前必须具备 pypinyin"""
         import generate_index_from_csv
 
-        monkeypatch.setattr(generate_index_from_csv, 'PYPINYIN_AVAILABLE', False)
+        monkeypatch.setattr(generate_index_from_csv, 'pypinyin_available', lambda: False)
         monkeypatch.setattr(sys, 'argv', ['generate_index_from_csv.py'])
 
         assert main() == 1
